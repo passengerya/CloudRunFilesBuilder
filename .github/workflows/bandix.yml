@@ -1,0 +1,115 @@
+#=================================================
+# https://github.com/wukongdaily/RunFilesBuilder
+# Description: Build RunFiles using GitHub Actions
+# Lisence: MIT
+# Author: wukongdaily
+# Blog: wkdaily.cpolar.cn
+#=================================================
+
+# 流量监控 bandix (timsaya/luci-app-bandix)
+name: Build 24.10 Bandix
+
+on:
+  schedule:
+    - cron: "14 22 * * *"  # 北京时间早上 6 点 14
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Clone makeself repository
+        run: git clone https://github.com/megastep/makeself.git
+
+      - name: Fetch latest release info
+        run: |
+          curl -s https://api.github.com/repos/timsaya/luci-app-bandix/releases \
+            | jq 'map(select(.prerelease==false)) | sort_by(.published_at) | last' \
+            > release.json
+
+      - name: Parse asset download URLs
+        run: |
+          X86_URL=$(jq -r '.assets[] | select(.name | test("bandix_.*_x86_64\\.ipk$")) | .browser_download_url' release.json)
+          ARM_URL=$(jq -r '.assets[] | select(.name | test("bandix_.*_aarch64_generic\\.ipk$")) | .browser_download_url' release.json)
+          A53_URL=$(jq -r '.assets[] | select(.name | test("bandix_.*_aarch64_cortex-a53\\.ipk$")) | .browser_download_url' release.json)
+          LUCI_URL=$(jq -r '.assets[] | select(.name | test("^luci-app-bandix_.*\\.ipk$")) | .browser_download_url' release.json)
+          I18N_URL=$(jq -r '.assets[] | select(.name | test("^luci-i18n-bandix-zh-cn_.*\\.ipk$")) | .browser_download_url' release.json)
+
+          echo "X86_URL=$X86_URL" >> $GITHUB_ENV
+          echo "ARM_URL=$ARM_URL" >> $GITHUB_ENV
+          echo "A53_URL=$A53_URL" >> $GITHUB_ENV
+          echo "LUCI_URL=$LUCI_URL" >> $GITHUB_ENV
+          echo "I18N_URL=$I18N_URL" >> $GITHUB_ENV
+
+          # 从 x86 的 bandix 文件名提取版本号 如 bandix_0.12.11-r1_x86_64.ipk -> 0.12.11-r1
+          VERSION=$(jq -r '.assets[] | select(.name | test("bandix_.*_x86_64\\.ipk$")) | .name' release.json | head -n1 | sed -n 's/^bandix_\([0-9][^_]*\)_x86_64\.ipk$/\1/p')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "提取到版本号: $VERSION"
+
+      - name: Download ipk files
+        run: |
+          mkdir -p x86 arm64 a53
+          wget "$X86_URL" -P x86/ 2>/dev/null || echo "⚠️ 无 x86 资产"
+          wget "$ARM_URL" -P arm64/ 2>/dev/null || echo "⚠️ 无 aarch64_generic 资产"
+          wget "$A53_URL" -P a53/ 2>/dev/null || echo "⚠️ 无 aarch64_cortex-a53 资产"
+
+          for d in x86 arm64 a53; do
+            wget "$LUCI_URL" -P $d/ 2>/dev/null || true
+            wget "$I18N_URL" -P $d/ 2>/dev/null || true
+          done
+          ls -lh */*.ipk 2>/dev/null | cat
+
+      - name: Create install.sh scripts
+        run: |
+          cat <<EOF > x86/install.sh
+          #!/bin/sh
+          opkg update
+          if [ \$? -ne 0 ]; then
+              echo "update failed。"
+              exit 1
+          fi
+          opkg install *.ipk
+          EOF
+          chmod +x x86/install.sh
+          cp x86/install.sh arm64/install.sh
+          cp x86/install.sh a53/install.sh
+
+      - name: Move directories to makeself
+        run: |
+          mv x86 makeself/
+          mv arm64 makeself/
+          mv a53 makeself/
+
+      - name: Create self-extracting packages
+        run: |
+          cd makeself
+          [ -n "$(ls x86/*.ipk 2>/dev/null)" ] && ./makeself.sh x86/ bandix_${VERSION}_x86_64.run "by github action" ./install.sh || echo "跳过 x86"
+          [ -n "$(ls arm64/*.ipk 2>/dev/null)" ] && ./makeself.sh arm64/ bandix_${VERSION}_aarch64_generic.run "by github action" ./install.sh || echo "跳过 aarch64_generic"
+          [ -n "$(ls a53/*.ipk 2>/dev/null)" ] && ./makeself.sh a53/ bandix_${VERSION}_aarch64_cortex-a53.run "by github action" ./install.sh || echo "跳过 aarch64_cortex-a53"
+
+      - name: Check file sizes
+        run: ls -lh makeself/*.run
+
+      - name: Set tag name
+        id: vars
+        run: |
+          TODAY=$(date -u -d '+8 hour' +'%Y-%m-%d')
+          echo "tag_name=$TODAY" >> $GITHUB_ENV
+
+      - name: Upload run files as release assets
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.tag_name }}
+          name: "Daily Build - ${{ env.tag_name }}"
+          files: makeself/*.run
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+             <p align="left">
+              <img src="https://img.shields.io/github/downloads/wkccd/CloudRunFilesBuilder/${{ env.tag_name }}/total?style=for-the-badge&label=%E4%BB%8A%E6%97%A5%E4%B8%8B%E8%BD%BD%E6%AC%A1%E6%95%B0&labelColor=blue&color=black"/>
+             </p>
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

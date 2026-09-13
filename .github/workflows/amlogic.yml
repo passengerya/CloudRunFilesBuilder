@@ -1,0 +1,95 @@
+#=================================================
+# https://github.com/wukongdaily/RunFilesBuilder
+# Description: Build RunFiles using GitHub Actions
+# Lisence: MIT
+# Author: wukongdaily
+# Blog: wkdaily.cpolar.cn
+#=================================================
+
+# 晶晨宝盒 luci-app-amlogic (ophub, 仅 ARM64 平台使用)
+name: Build 24.10 Amlogic
+
+on:
+  schedule:
+    - cron: "11 22 * * *"  # 北京时间早上 6 点 11
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Clone makeself repository
+        run: git clone https://github.com/megastep/makeself.git
+
+      - name: Fetch latest release info
+        run: |
+          curl -s https://api.github.com/repos/ophub/luci-app-amlogic/releases \
+            | jq 'map(select(.prerelease==false)) | sort_by(.published_at) | last' \
+            > release.json
+
+      - name: Parse asset download URLs
+        run: |
+          LUCI_URL=$(jq -r '.assets[] | select(.name | test("^luci-app-amlogic_.*_all\\.ipk$")) | .browser_download_url' release.json)
+          I18N_URL=$(jq -r '.assets[] | select(.name | test("^luci-i18n-amlogic-zh-cn_.*_all\\.ipk$")) | .browser_download_url' release.json)
+          echo "LUCI_URL=$LUCI_URL" >> $GITHUB_ENV
+          echo "I18N_URL=$I18N_URL" >> $GITHUB_ENV
+
+          # 从 ipk 文件名提取版本号 如 luci-app-amlogic_3.1.321-r2_all.ipk -> 3.1.321-r2
+          VERSION=$(echo "$LUCI_URL" | sed -n 's/.*luci-app-amlogic_\([0-9][^_]*\)_all\.ipk.*/\1/p')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "提取到版本号: $VERSION"
+
+      - name: Download ipk files
+        run: |
+          mkdir -p amlogic
+          wget "$LUCI_URL" -P amlogic/
+          wget "$I18N_URL" -P amlogic/ 2>/dev/null || echo "无 i18n 资产, 跳过"
+          ls -lh amlogic/
+
+      - name: Create install.sh script
+        run: |
+          cat <<EOF > amlogic/install.sh
+          #!/bin/sh
+          opkg update
+          if [ \$? -ne 0 ]; then
+              echo "update failed。"
+              exit 1
+          fi
+          opkg install *.ipk
+          EOF
+          chmod +x amlogic/install.sh
+
+      - name: Move directory to makeself
+        run: mv amlogic makeself/
+
+      - name: Create self-extracting package
+        run: |
+          cd makeself
+          ./makeself.sh amlogic/ luci-app-amlogic-${VERSION}_all.run "by github action" ./install.sh
+
+      - name: Check file sizes
+        run: ls -lh makeself/*.run
+
+      - name: Set tag name
+        id: vars
+        run: |
+          TODAY=$(date -u -d '+8 hour' +'%Y-%m-%d')
+          echo "tag_name=$TODAY" >> $GITHUB_ENV
+
+      - name: Upload run files as release assets
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.tag_name }}
+          name: "Daily Build - ${{ env.tag_name }}"
+          files: makeself/*.run
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+             <p align="left">
+              <img src="https://img.shields.io/github/downloads/wkccd/CloudRunFilesBuilder/${{ env.tag_name }}/total?style=for-the-badge&label=%E4%BB%8A%E6%97%A5%E4%B8%8B%E8%BD%BD%E6%AC%A1%E6%95%B0&labelColor=blue&color=black"/>
+             </p>
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

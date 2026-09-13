@@ -1,0 +1,82 @@
+#=================================================
+# https://github.com/wukongdaily/RunFilesBuilder
+# Description: Build RunFiles using GitHub Actions
+# Lisence: MIT
+# Author: wukongdaily
+# Blog: wkdaily.cpolar.cn
+#=================================================
+
+# 端口转发 lucky 大吉 (gdy666/lucky, ipk 来自 dl.openwrt.ai/kiddin9)
+name: Build 24.10 Lucky
+
+on:
+  schedule:
+    - cron: "18 22 * * *"  # 北京时间早上 6 点 18
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Clone makeself repository
+        run: git clone https://github.com/megastep/makeself.git
+
+      - name: Download lucky ipk files
+        run: |
+          chmod +x shell/lucky.sh
+          ./shell/lucky.sh
+
+      - name: Create install.sh scripts
+        run: |
+          cat <<EOF > x86/install.sh
+          #!/bin/sh
+          opkg update
+          if [ \$? -ne 0 ]; then
+              echo "update failed。"
+              exit 1
+          fi
+          opkg install *.ipk
+          EOF
+          chmod +x x86/install.sh
+          cp x86/install.sh arm64/install.sh
+          cp x86/install.sh a53/install.sh
+
+      - name: Move directories to makeself
+        run: |
+          mv x86 makeself/
+          mv arm64 makeself/
+          mv a53 makeself/
+
+      - name: Create self-extracting packages
+        run: |
+          cd makeself
+          [ -n "$(ls x86/*.ipk 2>/dev/null)" ] && ./makeself.sh x86/ lucky_${VERSION}_x86_64.run "by github action" ./install.sh || echo "跳过 x86"
+          [ -n "$(ls arm64/*.ipk 2>/dev/null)" ] && ./makeself.sh arm64/ lucky_${VERSION}_aarch64_generic.run "by github action" ./install.sh || echo "跳过 aarch64_generic"
+          [ -n "$(ls a53/*.ipk 2>/dev/null)" ] && ./makeself.sh a53/ lucky_${VERSION}_aarch64_cortex-a53.run "by github action" ./install.sh || echo "跳过 aarch64_cortex-a53"
+
+      - name: Check file sizes
+        run: ls -lh makeself/*.run
+
+      - name: Set tag name
+        id: vars
+        run: |
+          TODAY=$(date -u -d '+8 hour' +'%Y-%m-%d')
+          echo "tag_name=$TODAY" >> $GITHUB_ENV
+
+      - name: Upload run files as release assets
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.tag_name }}
+          name: "Daily Build - ${{ env.tag_name }}"
+          files: makeself/*.run
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+             <p align="left">
+              <img src="https://img.shields.io/github/downloads/wkccd/CloudRunFilesBuilder/${{ env.tag_name }}/total?style=for-the-badge&label=%E4%BB%8A%E6%97%A5%E4%B8%8B%E8%BD%BD%E6%AC%A1%E6%95%B0&labelColor=blue&color=black"/>
+             </p>
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
