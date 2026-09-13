@@ -40,20 +40,26 @@ jobs:
           mkdir -p downloads
           cd downloads
 
-          # 下载 x86_64 apk
+          # 下载 x86_64 apk（上游资产已从 passwall_packages_apk_*.zip 改名为 packages_apk_*.zip, 动态解析兼容新旧命名）
+          x86_zip=$(curl -s https://api.github.com/repos/Openwrt-Passwall/openwrt-passwall2/releases/latest \
+            | jq -r '.assets[] | select(.name | test("_apk_x86_64\\.zip$")) | .browser_download_url' | head -1)
           curl -L --fail --retry 5 --retry-delay 3 \
             -o passwall_packages_apk_x86_64.zip \
-            "https://github.com/Openwrt-Passwall/openwrt-passwall2/releases/download/${latest_tag}/passwall_packages_apk_x86_64.zip"
+            "$x86_zip"
 
           # 下载 aarch64 a53 apk
+          a53_zip=$(curl -s https://api.github.com/repos/Openwrt-Passwall/openwrt-passwall2/releases/latest \
+            | jq -r '.assets[] | select(.name | test("_apk_aarch64_cortex-a53\\.zip$")) | .browser_download_url' | head -1)
           curl -L --fail --retry 5 --retry-delay 3 \
             -o passwall_packages_apk_aarch64_cortex-a53.zip \
-            "https://github.com/Openwrt-Passwall/openwrt-passwall2/releases/download/${latest_tag}/passwall_packages_apk_aarch64_cortex-a53.zip"
+            "$a53_zip"
 
           # 下载 aarch64_generic apk
+          generic_zip=$(curl -s https://api.github.com/repos/Openwrt-Passwall/openwrt-passwall2/releases/latest \
+            | jq -r '.assets[] | select(.name | test("_apk_aarch64_generic\\.zip$")) | .browser_download_url' | head -1)
           curl -L --fail --retry 5 --retry-delay 3 \
             -o passwall_packages_apk_aarch64_generic.zip \
-            "https://github.com/Openwrt-Passwall/openwrt-passwall2/releases/download/${latest_tag}/passwall_packages_apk_aarch64_generic.zip"
+            "$generic_zip"
 
           # 下载 luci app apk
           luci_url=$(curl -s https://api.github.com/repos/Openwrt-Passwall/openwrt-passwall2/releases/latest \
