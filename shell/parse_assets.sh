@@ -20,10 +20,14 @@ ARM_GENERIC_DAE_URL=$(jq -r '.assets[] | select(.name | test("dae_.*_aarch64_gen
 
 LUCI_MAIN_URL=$(jq -r '.assets[] | select(.name | test("^luci-app-daede.*\\.ipk$")) | .browser_download_url' release.json | head -n1)
 
-# 固定链接
-X86_VMLINUX_BTF_URL="https://github.com/kenzok8/vmlinux-btf/releases/download/latest/vmlinux-btf_6.6.141-r1_x86_64.ipk"
-ARM_A53_VMLINUX_BTF_URL="https://github.com/kenzok8/vmlinux-btf/releases/download/latest/vmlinux-btf_6.6.141-r1_aarch64_cortex-a53.ipk"
-ARM_GENERIC_VMLINUX_BTF_URL="https://github.com/kenzok8/vmlinux-btf/releases/download/latest/vmlinux-btf_6.6.141-r1_aarch64_generic.ipk"
+# vmlinux-btf ipk：优先从 release.json 动态解析最新版，解析失败时用固定版本兜底
+X86_VMLINUX_BTF_URL=$(jq -r '.assets[] | select(.name | test("vmlinux-btf_.*_x86_64\\.ipk$")) | .browser_download_url' release.json | head -n1)
+ARM_A53_VMLINUX_BTF_URL=$(jq -r '.assets[] | select(.name | test("vmlinux-btf_.*_aarch64_cortex-a53\\.ipk$")) | .browser_download_url' release.json | head -n1)
+ARM_GENERIC_VMLINUX_BTF_URL=$(jq -r '.assets[] | select(.name | test("vmlinux-btf_.*_aarch64_generic\\.ipk$")) | .browser_download_url' release.json | head -n1)
+
+[ -n "$X86_VMLINUX_BTF_URL" ] || X86_VMLINUX_BTF_URL="https://github.com/kenzok8/openwrt-daede/releases/download/v2026.09.07-r2/vmlinux-btf_6.6.141-r1_x86_64.ipk"
+[ -n "$ARM_A53_VMLINUX_BTF_URL" ] || ARM_A53_VMLINUX_BTF_URL="https://github.com/kenzok8/openwrt-daede/releases/download/v2026.09.07-r2/vmlinux-btf_6.6.151-r1_aarch64_cortex-a53.ipk"
+[ -n "$ARM_GENERIC_VMLINUX_BTF_URL" ] || ARM_GENERIC_VMLINUX_BTF_URL="https://github.com/kenzok8/openwrt-daede/releases/download/v2026.09.07-r2/vmlinux-btf_6.6.151-r1_aarch64_generic.ipk"
 
 # 正确写入 GITHUB_ENV（关键修复）
 {

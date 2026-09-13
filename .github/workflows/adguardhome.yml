@@ -62,20 +62,28 @@ jobs:
           ls AdGuardHome_x86_64
 
       - name: Download luci-app-adguardhome IPK files
-        run: | 
+        run: |
           ARCHITECTURES=(
           "AdGuardHome_aarch32=https://dl.openwrt.ai/$PACKAGE_VERSION/arm_cortex-a7/kiddin9/"
           "AdGuardHome_aarch64=https://dl.openwrt.ai/$PACKAGE_VERSION/aarch64_cortex-a53/kiddin9/"
           "AdGuardHome_x86_64=https://dl.openwrt.ai/$PACKAGE_VERSION/x86_64/kiddin9/")
 
+          # luci-app-adguardhome 是 all 架构的ipk 三个平台目录共用同一个文件
+          # 每次变化的仅仅是内核 从 dl.openwrt.ai 的 x86_64 源动态取最新版
+          # (原固定版本源的 release 已被清理: wukongdaily/RunFilesBuilder AdGuardHome_v0.107.55)
+          LIST_URL="https://dl.openwrt.ai/$PACKAGE_VERSION/x86_64/kiddin9/"
+          LUCI_IPK=$(curl -sL "$LIST_URL" | grep -oE 'href="luci-app-adguardhome_[^"]*_all\.ipk"' | head -n1 | sed 's/href="//;s/"$//')
+          if [ -z "$LUCI_IPK" ]; then
+            # 目录列表解析失败时的兜底固定版本
+            LUCI_IPK="luci-app-adguardhome_27.090.45134~029b517_all.ipk"
+          fi
+          echo "==> luci ipk: $LUCI_IPK"
+
           for ARCH_MAPPING in "${ARCHITECTURES[@]}"; do
             ARCH=$(echo "$ARCH_MAPPING" | cut -d= -f1)
-            TARGET_URL=$(echo "$ARCH_MAPPING" | cut -d= -f2)
             mkdir -p "$ARCH"
 
-          # 下载固定的 luci-app-adguardhome-all.ipk 到该目录 这版本luci界面最好用 而且每次变化的仅仅是内核
-            curl -L -o "$ARCH/luci-app-adguardhome-all.ipk" \
-              "https://github.com/wukongdaily/RunFilesBuilder/releases/download/AdGuardHome_v0.107.55/luci-app-adguardhome-all.ipk"
+            curl -L -o "$ARCH/luci-app-adguardhome-all.ipk" "${LIST_URL}${LUCI_IPK}"
 
             echo "==> Downloaded for $ARCH:"
             ls -lh "$ARCH/luci-app-adguardhome-all.ipk"

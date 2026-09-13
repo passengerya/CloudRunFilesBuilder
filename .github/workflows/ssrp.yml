@@ -247,11 +247,11 @@ jobs:
           }
 
           download_mihomo \
-          "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.24/mihomo-linux-amd64-compatible-v1.19.24.gz" \
+          "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-linux-amd64-compatible-v1.19.30.gz" \
           "x86_64"
 
           download_mihomo \
-          "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.24/mihomo-linux-arm64-v1.19.24.gz" \
+          "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-linux-arm64-v1.19.30.gz" \
           "a53"
 
           echo "查看a53目录"

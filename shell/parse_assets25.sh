@@ -20,14 +20,19 @@ ARM_GENERIC_DAE_URL=$(jq -r '.assets[] | select(.name | test("dae-.*-aarch64_gen
 
 echo "cat release.json======"
 cat release.json
-LUCI_MAIN_URL="https://github.com/kenzok8/openwrt-daede/releases/download/v2026.07.09/luci-app-daede-1.14.7-r12-x86_64.apk"
-TEST_LUCI_MAIN_URL=$(jq -r '.assets[] | select(.name | test("luci-app-daede-*-x86_64\\.apk$")) | .browser_download_url' release.json | head -n1)
+# LUCI 主程序 apk：优先从 release.json 动态解析最新版，解析失败时用固定版本兜底
+LUCI_MAIN_URL=$(jq -r '.assets[] | select(.name | test("luci-app-daede-.*-x86_64\\.apk$")) | .browser_download_url' release.json | head -n1)
+[ -n "$LUCI_MAIN_URL" ] || LUCI_MAIN_URL="https://github.com/kenzok8/openwrt-daede/releases/download/v2026.09.07-r2/luci-app-daede-1.15-r2-x86_64.apk"
 
 
-# 固定链接
-X86_VMLINUX_BTF_URL="https://github.com/kenzok8/vmlinux-btf/releases/download/latest/vmlinux-btf-6.12.87-r1-x86_64.apk"
-ARM_A53_VMLINUX_BTF_URL="https://github.com/kenzok8/vmlinux-btf/releases/download/latest/vmlinux-btf-6.12.87-r1-aarch64_cortex-a53.apk"
-ARM_GENERIC_VMLINUX_BTF_URL="https://github.com/kenzok8/vmlinux-btf/releases/download/latest/vmlinux-btf-6.12.87-r1-aarch64_generic.apk"
+# vmlinux-btf apk：优先从 release.json 动态解析最新版，解析失败时用固定版本兜底
+X86_VMLINUX_BTF_URL=$(jq -r '.assets[] | select(.name | test("vmlinux-btf-.*-x86_64\\.apk$")) | .browser_download_url' release.json | head -n1)
+ARM_A53_VMLINUX_BTF_URL=$(jq -r '.assets[] | select(.name | test("vmlinux-btf-.*-aarch64_cortex-a53\\.apk$")) | .browser_download_url' release.json | head -n1)
+ARM_GENERIC_VMLINUX_BTF_URL=$(jq -r '.assets[] | select(.name | test("vmlinux-btf-.*-aarch64_generic\\.apk$")) | .browser_download_url' release.json | head -n1)
+
+[ -n "$X86_VMLINUX_BTF_URL" ] || X86_VMLINUX_BTF_URL="https://github.com/kenzok8/openwrt-daede/releases/download/v2026.09.07-r2/vmlinux-btf-6.12.103-r1-x86_64.apk"
+[ -n "$ARM_A53_VMLINUX_BTF_URL" ] || ARM_A53_VMLINUX_BTF_URL="https://github.com/kenzok8/openwrt-daede/releases/download/v2026.09.07-r2/vmlinux-btf-6.12.103-r1-aarch64_cortex-a53.apk"
+[ -n "$ARM_GENERIC_VMLINUX_BTF_URL" ] || ARM_GENERIC_VMLINUX_BTF_URL="https://github.com/kenzok8/openwrt-daede/releases/download/v2026.09.07-r2/vmlinux-btf-6.12.103-r1-aarch64_generic.apk"
 
 # 正确写入 GITHUB_ENV（关键修复）
 {

@@ -2,11 +2,11 @@
 
 set -euo pipefail
 
-# 平台基础URL
+# 平台基础URL (25.12 起 ImmortalWrt 改用 apk 包管理, 官方源: downloads.immortalwrt.org)
 declare -A PLATFORMS=(
-  ["x86_64"]="https://mirrors.pku.edu.cn/immortalwrt/releases/25.12.0/packages/x86_64"
-  ["aarch64_generic"]="https://mirrors.pku.edu.cn/immortalwrt/releases/25.12.0/packages/aarch64_generic"
-  ["aarch64_cortex-a53"]="https://mirrors.pku.edu.cn/immortalwrt/releases/25.12.0/packages/aarch64_cortex-a53"
+  ["x86_64"]="https://downloads.immortalwrt.org/releases/25.12.2/packages/x86_64"
+  ["aarch64_generic"]="https://downloads.immortalwrt.org/releases/25.12.2/packages/aarch64_generic"
+  ["aarch64_cortex-a53"]="https://downloads.immortalwrt.org/releases/25.12.2/packages/aarch64_cortex-a53"
 )
 
 # 各包所在 Feed
