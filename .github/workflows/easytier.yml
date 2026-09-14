@@ -53,6 +53,11 @@ jobs:
           wget "$X86_URL" -O x86.zip 2>/dev/null && unzip -o x86.zip -d x86/ >/dev/null && rm x86.zip || echo "⚠️ 无 x86 资产"
           wget "$ARM_URL" -O arm64.zip 2>/dev/null && unzip -o arm64.zip -d arm64/ >/dev/null && rm arm64.zip || echo "⚠️ 无 aarch64_generic 资产"
           wget "$A53_URL" -O a53.zip 2>/dev/null && unzip -o a53.zip -d a53/ >/dev/null && rm a53.zip || echo "⚠️ 无 aarch64_cortex-a53 资产"
+          # 删除与主包冲突的变体: easytier-noweb 与 easytier 提供相同二进制
+          # (check_data_file_clashes); luci-i18n-easytier-zh-cn 的文件已由
+          # luci-app-easytier 内置, 再装会冲突
+          find x86 arm64 a53 -name 'easytier-noweb_*.ipk' -delete 2>/dev/null || true
+          find x86 arm64 a53 -name 'luci-i18n-easytier-zh-cn_*.ipk' -delete 2>/dev/null || true
           find . -name "*.ipk" | head -20
 
       - name: Create install.sh scripts
