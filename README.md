@@ -11,11 +11,29 @@
 ## 工作原理
 
 - 每个软件一个 GitHub Actions 工作流，每天 UTC 22:00（北京时间早 6 点）起**错开分钟数**自动运行；
-- 工作流流程：拉取上游最新 Release → 解析下载 ipk → 分平台目录整理 → 生成 install.sh → makeself 打包 → 上传当日 Release；
+- 工作流流程：拉取上游最新 Release → 解析下载 ipk/apk → 分平台目录整理 →
+  **apk 文件名规范化**（[normalize_apk_names.py](shell/normalize_apk_names.py)，见下文）→
+  生成 install.sh → makeself 打包 → 上传当日 Release →
+  **通知下游 Sync Store**（门控：无其它构建运行中时由最后完成者发 repository_dispatch）；
 - 所有工作流上传到**同一个当日 tag**（`YYYY-MM-DD`，北京时间），Release 名 `Daily Build - <日期>`；
-- run 自解压包不加密，内含若干 ipk 和一个 install.sh：
+- run 自解压包不加密，内含若干 ipk/apk 和一个 install.sh：
   - 安装：`sh xxx.run`（24.10 用 `opkg install *.ipk`，25.12 用 `apk add --allow-untrusted *.apk`）
   - 只解压不安装：`sh xxx.run --target <目录> --noexec`
+
+### 25.12 通道 apk 文件名规范化（重要）
+
+ImageBuilder 构建时会对本地 `packages/` 目录执行 `apk mkndx`，其索引不含 filename 字段，
+安装时按默认规范 `${name}-${version}.apk` 推导文件名——上游 Release 的 apk 文件名带
+`_x86_64`/`-aarch64_cortex-a53` 等后缀会全部失配（报 `package mentioned in index not found`）。
+因此所有 25.12 工作流在打包前都会运行 `python3 shell/normalize_apk_names.py`，
+从 apk 包记录（apk v3 `ADBd` 格式或 v2 gzip tar）读取真实 name/version 并重命名为规范名。
+**新增 25.12 工作流时勿忘加这一步。**
+
+### 构建完成即时通知下游
+
+每个上传工作流末尾有「Notify Sync Store」步骤：当本仓库没有其它运行中/排队的构建时，
+向 AutoBuildImmortalTWrt 发 `repository_dispatch`（event_type: `builder-done`）即时触发 store 同步
+（需要 secrets.SYNC_DISPATCH_TOKEN；未配置时自动跳过，依赖下游 23:00 UTC 定时同步兜底）。
 
 ## 产物命名规范（下游同步脚本依赖此规则，请勿随意改动）
 
@@ -32,9 +50,9 @@
 
 示例：`mosdns_v5.3.4-r14_x86_64.run`、`24_quickfile_1.0.16_aarch64_generic.run`、`25-argon-2.4.7_aarch64_generic.run`、`luci-app-store-0.2.1-r1_all.run`。
 
-## 应用清单（48 个工作流）
+## 应用清单（47 个工作流）
 
-**24.10 ipk 通道**（28 个）：
+**24.10 ipk 通道**（27 个）：
 
 | 应用 | 工作流 | 上游来源 |
 | --- | --- | --- |
@@ -63,13 +81,15 @@
 | sing-box 内核 | `singbox.yml` | SagerNet/sing-box |
 | ssr-plus（mihomo） | `ssrp.yml` | fw876/helloworld |
 | tailscale-community | `tailscale-community.yml` | Tokisaki-Galaxy |
-| xray-core | `xray-core.yml` | XTLS/Xray-core |
 | iStore 商店 | `store.yml` | linkease/istore |
 | 高级卸载 | `advance_uninstall.yml` | 上游 run 直采 |
 
 **25.12 apk 通道**（17 个）：`argon25.yml`、`build-pw.yml`（PassWall）、`mosdns25.yml`、`oc25.yml`（OpenClash）、`pw2-25.yml`（Passwall2）、`ssrp25.yml`、`store25.yml`（iStore）、`25-quickfile.yml`、`25-singbox.yml`、`25-openwrt-daede.yml`、`25-clashoo.yml`、`25-rtp2httpd.yml`、`25-advancedplus.yml`、`25-aurora-theme.yml`、`25-amlogic.yml`、`25-tailscale-community.yml`、`25-easytier.yml`
 
 **维护类**（3 个）：`clean.yml`（清理旧运行记录）、`clean-release.yml`（清理旧 Release）、`remove.yml`（删除全部 tag）
+
+> 注：xray-core 已从本仓库移除——imm 官方仓库自带 xray-core，下游已在开关文件的
+> imm 固定段中提供（24.10/25.12 两通道），不再需要 run 包。
 
 ## 如何新增一个软件
 
@@ -84,6 +104,9 @@
 - 所有 GitHub API 请求必须带 `Authorization: token ${{ secrets.GITHUB_TOKEN }}`（未认证会撞共享 IP 限流）；
 - cron 分钟数与现有工作流错开；
 - 产物命名遵守上面的命名规范，**版本号提取要覆盖 `_all.ipk` 后缀**；
+- 25.12 工作流在打包前必须运行 `normalize_apk_names.py` 规范化 apk 文件名（见上文）；
+- 上传 Release 的工作流末尾带「Notify Sync Store」门控步骤（模板复制时保留）；
+- 同一 ipk 集的 luci 主包若已内置 i18n（如 bandix），**不要**额外打包独立 luci-i18n 包，否则 opkg 文件冲突导致下游构建失败；
 - 提交到 dev 分支验证后**合并到 daily**（定时构建只读默认分支）。
 
 ## 分支
