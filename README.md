@@ -14,7 +14,7 @@
 - 工作流流程：拉取上游最新 Release → 解析下载 ipk/apk → 分平台目录整理 →
   **apk 文件名规范化**（[normalize_apk_names.py](shell/normalize_apk_names.py)，见下文）→
   生成 install.sh → makeself 打包 → 上传当日 Release →
-  **通知下游 Sync Store**（门控：无其它构建运行中时由最后完成者发 repository_dispatch）；
+  **通知下游 Sync Store**（领导选举：由「最新启动且仍在运行」的构建发 repository_dispatch，见下文）；
 - 所有工作流上传到**同一个当日 tag**（`YYYY-MM-DD`，北京时间），Release 名 `Daily Build - <日期>`；
 - run 自解压包不加密，内含若干 ipk/apk 和一个 install.sh：
   - 安装：`sh xxx.run`（24.10 用 `opkg install *.ipk`，25.12 用 `apk add --allow-untrusted *.apk`）
@@ -31,9 +31,11 @@ ImageBuilder 构建时会对本地 `packages/` 目录执行 `apk mkndx`，其索
 
 ### 构建完成即时通知下游
 
-每个上传工作流末尾有「Notify Sync Store」步骤：当本仓库没有其它运行中/排队的构建时，
-向 AutoBuildTWrt 发 `repository_dispatch`（event_type: `builder-done`）即时触发 store 同步
-（需要 secrets.SYNC_DISPATCH_TOKEN；未配置时自动跳过，依赖下游 23:00 UTC 定时同步兜底）。
+每个上传工作流末尾有「Notify Sync Store」步骤：等待 15s 让同期启动的构建全部入队后，
+由**「最新启动且仍在运行/排队」的那个运行**（领导选举，确定性单通知，避免并发完成时
+无人通知或多重通知）向 AutoBuildTWrt 发 `repository_dispatch`（event_type: `builder-done`）
+即时触发 store 同步（需要 secrets.SYNC_DISPATCH_TOKEN；未配置时自动跳过，
+依赖下游 23:00 UTC 定时同步兜底）。
 
 ## 产物命名规范（下游同步脚本依赖此规则，请勿随意改动）
 
@@ -107,7 +109,7 @@ ImageBuilder 构建时会对本地 `packages/` 目录执行 `apk mkndx`，其索
 - cron 分钟数与现有工作流错开；
 - 产物命名遵守上面的命名规范，**版本号提取要覆盖 `_all.ipk` 后缀**；
 - 25.12 工作流在打包前必须运行 `normalize_apk_names.py` 规范化 apk 文件名（见上文）；
-- 上传 Release 的工作流末尾带「Notify Sync Store」门控步骤（模板复制时保留）；
+- 上传 Release 的工作流末尾带「Notify Sync Store」领导选举步骤（模板复制时保留）；
 - 同一 ipk 集的 luci 主包若已内置 i18n（如 bandix），**不要**额外打包独立 luci-i18n 包，否则 opkg 文件冲突导致下游构建失败；
 - 提交到 dev 分支验证后**合并到 daily**（定时构建只读默认分支）。
 
