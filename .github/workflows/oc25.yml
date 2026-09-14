@@ -20,7 +20,12 @@ jobs:
     steps:
       - name: Create OpenClash & openclash directory for git & apk
         run: mkdir -p OpenClash openclash-x86 openclash-a53
-        
+
+      - name: Checkout own repo (for shared scripts)
+        uses: actions/checkout@v6
+        with:
+          path: cfbuild
+
       - name: Checkout package branch to OpenClash directory
         uses: actions/checkout@v6
         with:
@@ -90,7 +95,7 @@ jobs:
 
       
       - name: Normalize apk file names (规范为 name-version.apk, imagebuilder 本地索引依赖)
-        run: python3 shell/normalize_apk_names.py
+        run: python3 cfbuild/shell/normalize_apk_names.py
 
       - name: move openclash directory to makeself & create run
         run: |

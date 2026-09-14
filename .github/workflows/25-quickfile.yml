@@ -28,7 +28,7 @@ jobs:
       - name: Fetch latest prerelease info
         id: fetch_release
         run: |
-          curl -s https://api.github.com/repos/wkccd/quickfile/releases \
+          curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/wkccd/quickfile/releases \
             | jq 'map(select(.prerelease==false)) | sort_by(.published_at) | last' \
             > release.json
       
