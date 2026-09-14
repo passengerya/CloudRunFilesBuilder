@@ -1,0 +1,99 @@
+#=================================================
+# https://github.com/wukongdaily/RunFilesBuilder
+# Description: Build RunFiles using GitHub Actions
+# Lisence: MIT
+# Author: wukongdaily
+# Blog: wkdaily.cpolar.cn
+#=================================================
+
+# 组网 easytier apk 版 (EasyTier, SNAPSHOT zip 对应 apk 系统, 内含 .apk)
+name: Build 25.12 EasyTier
+
+on:
+  schedule:
+    - cron: "26 22 * * *"  # 北京时间早上 6 点 26
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Clone makeself repository
+        run: git clone https://github.com/megastep/makeself.git
+
+      - name: Fetch latest release info
+        run: |
+          curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/EasyTier/luci-app-easytier/releases \
+            | jq 'map(select(.prerelease==false)) | sort_by(.published_at) | last' \
+            > release.json
+
+      - name: Parse asset download URLs
+        run: |
+          # SNAPSHOT 系列对应 apk 版(25.12)系统
+          X86_URL=$(jq -r '.assets[] | select(.name | test("EasyTier-.*-x86_64-SNAPSHOT\\.zip$")) | .browser_download_url' release.json | head -n1)
+          ARM_URL=$(jq -r '.assets[] | select(.name | test("EasyTier-.*-aarch64_generic-SNAPSHOT\\.zip$")) | .browser_download_url' release.json | head -n1)
+          A53_URL=$(jq -r '.assets[] | select(.name | test("EasyTier-.*-aarch64_cortex-a53-SNAPSHOT\\.zip$")) | .browser_download_url' release.json | head -n1)
+
+          echo "X86_URL=$X86_URL" >> $GITHUB_ENV
+          echo "ARM_URL=$ARM_URL" >> $GITHUB_ENV
+          echo "A53_URL=$A53_URL" >> $GITHUB_ENV
+
+          # 版本号: EasyTier-v2.6.4-x86_64-SNAPSHOT.zip -> v2.6.4
+          VERSION=$(echo "$X86_URL" | sed -E 's#.*/EasyTier-(v[0-9.]+)-x86_64-SNAPSHOT\.zip#\1#')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "提取到版本号: $VERSION"
+
+      - name: Download and unzip apk packages
+        run: |
+          mkdir -p x86 arm64 a53
+          wget "$X86_URL" -O x86.zip 2>/dev/null && unzip -o x86.zip -d x86/ >/dev/null && rm x86.zip || echo "⚠️ 无 x86 资产"
+          wget "$ARM_URL" -O arm64.zip 2>/dev/null && unzip -o arm64.zip -d arm64/ >/dev/null && rm arm64.zip || echo "⚠️ 无 aarch64_generic 资产"
+          wget "$A53_URL" -O a53.zip 2>/dev/null && unzip -o a53.zip -d a53/ >/dev/null && rm a53.zip || echo "⚠️ 无 aarch64_cortex-a53 资产"
+          find . -name "*.apk" | head -20
+
+      - name: Create install.sh scripts
+        run: |
+          cp shell/install25.sh x86/install.sh
+          cp shell/install25.sh arm64/install.sh
+          cp shell/install25.sh a53/install.sh
+          chmod +x x86/install.sh arm64/install.sh a53/install.sh
+
+      - name: Move directories to makeself
+        run: |
+          mv x86 makeself/
+          mv arm64 makeself/
+          mv a53 makeself/
+
+      - name: Create self-extracting packages
+        run: |
+          cd makeself
+          [ -n "$(find x86 -name '*.apk')" ] && ./makeself.sh x86/ 25-easytier_${VERSION}_x86_64.run "by github action" ./install.sh || echo "跳过 x86"
+          [ -n "$(find arm64 -name '*.apk')" ] && ./makeself.sh arm64/ 25-easytier_${VERSION}_aarch64_generic.run "by github action" ./install.sh || echo "跳过 aarch64_generic"
+          [ -n "$(find a53 -name '*.apk')" ] && ./makeself.sh a53/ 25-easytier_${VERSION}_aarch64_cortex-a53.run "by github action" ./install.sh || echo "跳过 aarch64_cortex-a53"
+
+      - name: Check file sizes
+        run: ls -lh makeself/*.run
+
+      - name: Set tag name
+        id: vars
+        run: |
+          TODAY=$(date -u -d '+8 hour' +'%Y-%m-%d')
+          echo "tag_name=$TODAY" >> $GITHUB_ENV
+
+      - name: Upload run files as release assets
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.tag_name }}
+          name: "Daily Build - ${{ env.tag_name }}"
+          files: makeself/*.run
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+             <p align="left">
+              <img src="https://img.shields.io/github/downloads/wkccd/CloudRunFilesBuilder/${{ env.tag_name }}/total?style=for-the-badge&label=%E4%BB%8A%E6%97%A5%E4%B8%8B%E8%BD%BD%E6%AC%A1%E6%95%B0&labelColor=blue&color=black"/>
+             </p>
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
