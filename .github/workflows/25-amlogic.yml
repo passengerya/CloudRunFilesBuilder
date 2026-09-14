@@ -84,7 +84,27 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
              <p align="left">
-              <img src="https://img.shields.io/github/downloads/wkccd/CloudRunFilesBuilder/${{ env.tag_name }}/total?style=for-the-badge&label=%E4%BB%8A%E6%97%A5%E4%B8%8B%E8%BD%BD%E6%AC%A1%E6%95%B0&labelColor=blue&color=black"/>
+              <img src="https://img.shields.io/github/downloads/passengerya/CloudRunFilesBuilder/${{ env.tag_name }}/total?style=for-the-badge&label=%E4%BB%8A%E6%97%A5%E4%B8%8B%E8%BD%BD%E6%AC%A1%E6%95%B0&labelColor=blue&color=black"/>
              </p>
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify Sync Store (builder 全部构建完成后即时触发同步)
+        if: success() && ${{ secrets.SYNC_DISPATCH_TOKEN != '' }}
+        env:
+          SYNC_DISPATCH_TOKEN: ${{ secrets.SYNC_DISPATCH_TOKEN }}
+        run: |
+          # 门控: 本仓库还有其它运行中/排队的构建时不通知, 由最后完成的工作流通知
+          others=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/passengerya/CloudRunFilesBuilder/actions/runs?per_page=100" \
+            | jq --argjson rid "$GITHUB_RUN_ID" '[.workflow_runs[] | select(.id != $rid and (.status == "in_progress" or .status == "queued"))] | length')
+          if [ "$others" != "0" ]; then
+            echo "⏳ 仍有 $others 个构建运行中, 由最后完成者通知 Sync Store"
+            exit 0
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: token $SYNC_DISPATCH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/passengerya/AutoBuildImmortalTWrt/dispatches" \
+            -d '{"event_type":"builder-done"}')
+          echo "✅ 已通知 Sync Store (HTTP $code)"
+
