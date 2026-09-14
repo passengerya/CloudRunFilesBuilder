@@ -28,7 +28,7 @@ jobs:
 
       - name: Fetch latest release info
         run: |
-          curl -s https://api.github.com/repos/Tokisaki-Galaxy/luci-app-tailscale-community/releases \
+          curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/Tokisaki-Galaxy/luci-app-tailscale-community/releases \
             | jq 'map(select(.prerelease==false)) | sort_by(.published_at) | last' \
             > release.json
 
