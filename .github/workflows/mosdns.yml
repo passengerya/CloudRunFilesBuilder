@@ -129,17 +129,22 @@ jobs:
         env:
           SYNC_DISPATCH_TOKEN: ${{ secrets.SYNC_DISPATCH_TOKEN }}
         run: |
-          # 门控: 本仓库还有其它运行中/排队的构建时不通知, 由最后完成的工作流通知
-          others=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/passengerya/CloudRunFilesBuilder/actions/runs?per_page=100" \
-            | jq --argjson rid "$GITHUB_RUN_ID" '[.workflow_runs[] | select(.id != $rid and (.status == "in_progress" or .status == "queued"))] | length')
-          if [ "$others" != "0" ]; then
-            echo "⏳ 仍有 $others 个构建运行中, 由最后完成者通知 Sync Store"
-            exit 0
-          fi
-          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-            -H "Authorization: token $SYNC_DISPATCH_TOKEN" -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/passengerya/AutoBuildImmortalTWrt/dispatches" \
-            -d '{"event_type":"builder-done"}')
-          echo "✅ 已通知 Sync Store (HTTP $code)"
+          # 门控+轮询: 其它构建结束时仍有 post 阶段(状态短暂保持 in_progress),
+          # 需等待其彻底结束后再判断, 避免并发完成时无人通知
+          for i in 1 2 3 4 5 6; do
+            others=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/passengerya/CloudRunFilesBuilder/actions/runs?per_page=100" \
+              | jq --argjson rid "$GITHUB_RUN_ID" '[.workflow_runs[] | select(.id != $rid and (.status == "in_progress" or .status == "queued"))] | length')
+            if [ "$others" = "0" ]; then
+              code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+                -H "Authorization: token $SYNC_DISPATCH_TOKEN" -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/passengerya/AutoBuildImmortalTWrt/dispatches" \
+                -d '{"event_type":"builder-done"}')
+              echo "✅ 已通知 Sync Store (HTTP $code)"
+              exit 0
+            fi
+            echo "⏳ 仍有 $others 个构建运行中, 15s 后重试 ($i/6)"
+            sleep 15
+          done
+          echo "⏳ 6 次检查后仍有构建运行中, 放弃本次通知(由最后完成者或 23:00 UTC 定时兜底)"
 

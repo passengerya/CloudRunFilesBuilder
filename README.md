@@ -50,7 +50,7 @@ ImageBuilder 构建时会对本地 `packages/` 目录执行 `apk mkndx`，其索
 
 示例：`mosdns_v5.3.4-r14_x86_64.run`、`24_quickfile_1.0.16_aarch64_generic.run`、`25-argon-2.4.7_aarch64_generic.run`、`luci-app-store-0.2.1-r1_all.run`。
 
-## 应用清单（49 个工作流）
+## 应用清单（51 个工作流）
 
 **24.10 ipk 通道**（29 个）：
 
