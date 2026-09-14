@@ -95,22 +95,24 @@ jobs:
         env:
           SYNC_DISPATCH_TOKEN: ${{ secrets.SYNC_DISPATCH_TOKEN }}
         run: |
-          # 门控+轮询: 其它构建结束时仍有 post 阶段(状态短暂保持 in_progress),
-          # 需等待其彻底结束后再判断, 避免并发完成时无人通知
-          for i in 1 2 3 4 5 6; do
-            others=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/passengerya/CloudRunFilesBuilder/actions/runs?per_page=100" \
-              | jq --argjson rid "$GITHUB_RUN_ID" '[.workflow_runs[] | select(.id != $rid and (.status == "in_progress" or .status == "queued"))] | length')
-            if [ "$others" = "0" ]; then
-              code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-                -H "Authorization: token $SYNC_DISPATCH_TOKEN" -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/passengerya/AutoBuildImmortalTWrt/dispatches" \
-                -d '{"event_type":"builder-done"}')
-              echo "✅ 已通知 Sync Store (HTTP $code)"
-              exit 0
-            fi
-            echo "⏳ 仍有 $others 个构建运行中, 15s 后重试 ($i/6)"
-            sleep 15
-          done
-          echo "⏳ 6 次检查后仍有构建运行中, 放弃本次通知(由最后完成者或 23:00 UTC 定时兜底)"
+          # 领导选举: 等 15s 让同期启动的构建全部入队, 然后由「最新启动且仍在运行/排队」
+          # 的运行发通知——确定性单通知, 不依赖其它构建的完成状态(轮询方式会死锁:
+          # 各运行的等待本身让对方永远看到"运行中")。更晚启动的构建完成后会自行通知。
+          sleep 15
+          my_ts=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/passengerya/CloudRunFilesBuilder/actions/runs?per_page=100" \
+            | jq -r --argjson rid "$GITHUB_RUN_ID" '.workflow_runs[] | select(.id == $rid) | .created_at')
+          newer=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/passengerya/CloudRunFilesBuilder/actions/runs?per_page=100" \
+            | jq --argjson rid "$GITHUB_RUN_ID" --arg ts "$my_ts" \
+            '[.workflow_runs[] | select(.id != $rid and ((.created_at > $ts) or (.created_at == $ts and .id > $rid)) and (.status == "in_progress" or .status == "queued"))] | length')
+          if [ "$newer" != "0" ]; then
+            echo "⏳ 有 $newer 个更晚启动的构建运行中, 由它们完成后通知 Sync Store"
+            exit 0
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: token $SYNC_DISPATCH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/passengerya/AutoBuildImmortalTWrt/dispatches" \
+            -d '{"event_type":"builder-done"}')
+          echo "✅ 已通知 Sync Store (HTTP $code)"
 
