@@ -39,7 +39,7 @@ jobs:
           echo "I18N_URL=$I18N_URL" >> $GITHUB_ENV
 
           # 从 ipk 文件名提取版本号 如 luci-app-advancedplus_1.8.7-r20251116_all.ipk -> 1.8.7-r20251116
-          VERSION=$(echo "$LUCI_URL" | sed -n 's/.*luci-app-advancedplus_\([0-9][^_]*\)\.ipk.*/\1/p')
+          VERSION=$(echo "$LUCI_URL" | sed -n 's/.*luci-app-advancedplus_\([0-9][^_]*\)_.*/\1/p')
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "提取到版本号: $VERSION"
 

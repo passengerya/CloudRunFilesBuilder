@@ -37,7 +37,7 @@ jobs:
           echo "LUCI_URL=$LUCI_URL" >> $GITHUB_ENV
 
           # 从 ipk 文件名提取版本号 如 luci-app-nekobox_2.0.9-rc14_all.ipk -> 2.0.9-rc14
-          VERSION=$(echo "$LUCI_URL" | sed -n 's/.*luci-app-nekobox_\([0-9][^_]*\)\.ipk.*/\1/p')
+          VERSION=$(echo "$LUCI_URL" | sed -n 's/.*luci-app-nekobox_\([0-9][^_]*\)_.*/\1/p')
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "提取到版本号: $VERSION"
 
