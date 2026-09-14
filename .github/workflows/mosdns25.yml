@@ -62,6 +62,9 @@ jobs:
           cp mosdns_x86_64/install.sh mosdns_aarch64_cortex-a53/install.sh
           cp mosdns_x86_64/install.sh mosdns_aarch64_generic/install.sh
 
+      - name: Normalize apk file names (规范为 name-version.apk, imagebuilder 本地索引依赖)
+        run: python3 shell/normalize_apk_names.py
+
       - name: Move mosdns directories to makeself
         run: |
           mv mosdns_x86_64 makeself/

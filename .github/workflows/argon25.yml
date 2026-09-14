@@ -35,6 +35,9 @@ jobs:
           cp shell/install25.sh aarch64_cortex-a53/install25.sh
           chmod +x x86_64/install25.sh aarch64_generic/install25.sh aarch64_cortex-a53/install25.sh
 
+      - name: Normalize apk file names (规范为 name-version.apk, imagebuilder 本地索引依赖)
+        run: python3 shell/normalize_apk_names.py
+
       - name: 🔍 提取版本号并打包
         id: pack
         run: |

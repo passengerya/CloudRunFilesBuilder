@@ -3,7 +3,9 @@ set -e
 
 # 下载 bandix 各平台 ipk:
 # - bandix 主程序 + luci-app-bandix 来自 dl.openwrt.ai/kiddin9
-# - luci-i18n-bandix-zh-cn 来自 timsaya/luci-app-bandix 的 GitHub Release
+# 注意: 不打包 luci-i18n-bandix-zh-cn —— kiddin9 的 luci-app-bandix 已内置
+# zh-cn 语言文件, 再装独立 i18n 包会与 luci-app-bandix 产生文件冲突
+# (opkg check_data_file_clashes), 导致固件构建失败。
 
 declare -A PLATFORMS=(
   ["x86"]="x86_64"
@@ -12,12 +14,6 @@ declare -A PLATFORMS=(
 )
 
 mkdir -p x86 arm64 a53
-
-# i18n (all 架构, 从 GitHub Release 取)
-I18N_URL=$(curl -s -H "Authorization: token ${GITHUB_TOKEN:-}" \
-  https://api.github.com/repos/timsaya/luci-app-bandix/releases \
-  | jq -r 'map(select(.prerelease==false)) | sort_by(.published_at) | last
-           | .assets[] | select(.name | test("^luci-i18n-bandix-zh-cn_.*\\.ipk$")) | .browser_download_url')
 
 for dir in "${!PLATFORMS[@]}"; do
   arch="${PLATFORMS[$dir]}"
@@ -39,15 +35,6 @@ for dir in "${!PLATFORMS[@]}"; do
       echo "[!] 未找到 ${arch} 的 bandix ipk"
     fi
   done
-
-  # i18n 每个平台目录都放一份
-  if [ -n "$I18N_URL" ]; then
-    I18N_NAME=$(basename "$I18N_URL")
-    echo "[+] 下载 $I18N_NAME"
-    curl -sL --max-time 120 -o "${dir}/${I18N_NAME}" "$I18N_URL" || echo "[!] i18n 下载失败"
-  else
-    echo "[!] 未找到 luci-i18n-bandix-zh-cn 资产"
-  fi
 done
 
 # 提取版本号(取 x86 的 bandix ipk 文件名, 如 bandix_0.11.0-r25_x86_64.ipk -> 0.11.0-r25)

@@ -180,6 +180,9 @@ jobs:
           cp x86/install.sh arm64/install.sh
           cp x86/install.sh arm64-generic/install.sh
 
+      - name: Normalize apk file names (规范为 name-version.apk, imagebuilder 本地索引依赖)
+        run: python3 shell/normalize_apk_names.py
+
       - name: Move directories to makeself
         run: |
           mv x86 makeself/

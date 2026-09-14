@@ -55,6 +55,9 @@ jobs:
           cp shell/install25.sh tailscale-community/install.sh
           chmod +x tailscale-community/install.sh
 
+      - name: Normalize apk file names (规范为 name-version.apk, imagebuilder 本地索引依赖)
+        run: python3 shell/normalize_apk_names.py
+
       - name: Move directory to makeself
         run: mv tailscale-community makeself/
 

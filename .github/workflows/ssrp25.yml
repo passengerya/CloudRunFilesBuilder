@@ -127,6 +127,9 @@ jobs:
           echo "Downloaded files:"
           ls -lh work/
 
+      - name: Normalize apk file names (规范为 name-version.apk, imagebuilder 本地索引依赖)
+        run: python3 shell/normalize_apk_names.py
+
       - name: Build run
         run: |
           makeself --quiet work makeself/25-SSRP-mihomo-${{ matrix.arch }}-${{ env.PACKAGE_VERSION }}.run "SSRP" ./install.sh

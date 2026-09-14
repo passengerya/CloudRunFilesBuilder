@@ -89,6 +89,9 @@ jobs:
           git clone https://github.com/megastep/makeself.git
 
       
+      - name: Normalize apk file names (规范为 name-version.apk, imagebuilder 本地索引依赖)
+        run: python3 shell/normalize_apk_names.py
+
       - name: move openclash directory to makeself & create run
         run: |
           mv openclash-x86 makeself/

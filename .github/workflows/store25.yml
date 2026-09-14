@@ -33,6 +33,9 @@ jobs:
           cp shell/install25.sh store/install25.sh
           chmod +x store/install25.sh
 
+      - name: Normalize apk file names (规范为 name-version.apk, imagebuilder 本地索引依赖)
+        run: python3 shell/normalize_apk_names.py
+
       - name: 🔍 提取版本号并打包
         id: pack
         run: |

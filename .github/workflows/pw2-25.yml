@@ -122,6 +122,9 @@ jobs:
           cp passwall_x86_64/install.sh passwall_aarch64-a53/install.sh
           cp passwall_x86_64/install.sh passwall_aarch64_generic/install.sh
 
+      - name: Normalize apk file names (规范为 name-version.apk, imagebuilder 本地索引依赖)
+        run: python3 shell/normalize_apk_names.py
+
       - name: Move passwall2 directories to makeself
         run: |
           mv passwall_x86_64 makeself/
