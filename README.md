@@ -5,7 +5,7 @@
 **本仓库是 OpenWrt 固件流水线的第一层**：每天同步上游各位大佬项目里最新编译的 ipk 文件，
 用 makeself 打包成适用于 iStoreOS/OpenWrt 的 **run 自解压包**，发布到当日 Release。
 
-下游项目 [AutoBuildImmortalTWrt](https://github.com/passengerya/AutoBuildImmortalTWrt)
+下游项目 [AutoBuildTWrt](https://github.com/passengerya/AutoBuildTWrt)
 的内嵌 store 每天从本仓库最新 Release 自动同步，因此**本仓库是整条流水线的软件来源**。
 
 ## 工作原理
@@ -32,7 +32,7 @@ ImageBuilder 构建时会对本地 `packages/` 目录执行 `apk mkndx`，其索
 ### 构建完成即时通知下游
 
 每个上传工作流末尾有「Notify Sync Store」步骤：当本仓库没有其它运行中/排队的构建时，
-向 AutoBuildImmortalTWrt 发 `repository_dispatch`（event_type: `builder-done`）即时触发 store 同步
+向 AutoBuildTWrt 发 `repository_dispatch`（event_type: `builder-done`）即时触发 store 同步
 （需要 secrets.SYNC_DISPATCH_TOKEN；未配置时自动跳过，依赖下游 23:00 UTC 定时同步兜底）。
 
 ## 产物命名规范（下游同步脚本依赖此规则，请勿随意改动）
@@ -43,8 +43,8 @@ ImageBuilder 构建时会对本地 `packages/` 目录执行 `apk mkndx`，其索
 
 | 通道 | 前缀 | 包管理 | 下游对应 |
 | --- | --- | --- | --- |
-| 24.10 ipk 通道 | 无前缀 或 `24_`/`24-` | opkg | AutoBuildImmortalTWrt 的 `shell/custom-packages.sh` |
-| 25.12 apk 通道 | `25_` 或 `25-` | apk | AutoBuildImmortalTWrt 的 `shell/apk-custom-packages.sh` |
+| 24.10 ipk 通道 | 无前缀 或 `24_`/`24-` | opkg | AutoBuildTWrt 的 `shell/custom-packages.sh` |
+| 25.12 apk 通道 | `25_` 或 `25-` | apk | AutoBuildTWrt 的 `shell/apk-custom-packages.sh` |
 
 架构标记枚举：`x86_64`、`aarch64_generic`、`aarch64_cortex-a53`、`aarch64_a53`、`_all`（架构无关，两个架构目录都放）。
 

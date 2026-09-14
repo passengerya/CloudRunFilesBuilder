@@ -150,7 +150,7 @@ jobs:
           fi
           code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
             -H "Authorization: token $SYNC_DISPATCH_TOKEN" -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/passengerya/AutoBuildImmortalTWrt/dispatches" \
+            "https://api.github.com/repos/passengerya/AutoBuildTWrt/dispatches" \
             -d '{"event_type":"builder-done"}')
           echo "✅ 已通知 Sync Store (HTTP $code)"
 
