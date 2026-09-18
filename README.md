@@ -52,15 +52,18 @@ ImageBuilder 构建时会对本地 `packages/` 目录执行 `apk mkndx`，其索
 
 示例：`mosdns_v5.3.4-r14_x86_64.run`、`24_quickfile_1.0.16_aarch64_generic.run`、`25-argon-2.4.7_aarch64_generic.run`、`luci-app-store-0.2.1-r1_all.run`。
 
-## 应用清单（47 个工作流）
+## 应用清单（53 个工作流）
 
-**24.10 ipk 通道**（27 个）：
+**24.10 ipk 通道**（30 个）：
 
 | 应用 | 工作流 | 上游来源 |
 | --- | --- | --- |
 | AdGuardHome | `adguardhome.yml` | AdguardTeam/AdGuardHome |
 | argon 主题 | `argon.yml` | ImmortalWrt 软件源 |
+| aurora 极光主题 | `aurora-theme.yml` | eamonxg/luci-theme-aurora |
+| aurora-config 极光配置中心 | `aurora-config.yml` | eamonxg/luci-app-aurora-config |
 | shadcn 主题 | `shadcn.yml` | eamonxg/luci-theme-shadcn |
+| oaf 应用过滤 | `oaf.yml` | destan19/OpenAppFilter |
 | advancedplus 进阶设置 | `advancedplus.yml` | sirpdboy/luci-app-advancedplus |
 | amlogic 晶晨宝盒（仅 ARM64） | `amlogic.yml` | ophub/luci-app-amlogic |
 | bandix 流量监控 | `bandix.yml` | dl.openwrt.ai/kiddin9 + timsaya |
@@ -86,9 +89,9 @@ ImageBuilder 构建时会对本地 `packages/` 目录执行 `apk mkndx`，其索
 | iStore 商店 | `store.yml` | linkease/istore |
 | 高级卸载 | `advance_uninstall.yml` | 上游 run 直采 |
 
-**25.12 apk 通道**（17 个）：`argon25.yml`、`build-pw.yml`（PassWall）、`mosdns25.yml`、`oc25.yml`（OpenClash）、`pw2-25.yml`（Passwall2）、`ssrp25.yml`、`store25.yml`（iStore）、`25-quickfile.yml`、`25-singbox.yml`、`25-openwrt-daede.yml`、`25-clashoo.yml`、`25-rtp2httpd.yml`、`25-advancedplus.yml`、`25-amlogic.yml`、`25-tailscale-community.yml`、`25-easytier.yml`、`25-shadcn.yml`
+**25.12 apk 通道**（20 个）：`argon25.yml`、`build-pw.yml`（PassWall）、`mosdns25.yml`、`oc25.yml`（OpenClash）、`pw2-25.yml`（Passwall2）、`ssrp25.yml`、`store25.yml`（iStore）、`25-quickfile.yml`、`25-singbox.yml`、`25-openwrt-daede.yml`、`25-clashoo.yml`、`25-rtp2httpd.yml`、`25-advancedplus.yml`、`25-aurora-theme.yml`、`25-aurora-config.yml`、`25-oaf.yml`、`25-amlogic.yml`、`25-tailscale-community.yml`、`25-easytier.yml`、`25-shadcn.yml`
 
-> 2026-09-16 起 aurora 全系（`luci-theme-aurora` 主题、`luci-app-aurora-config` 配置中心、语言包）彻底移除不再打包——烘焙进固件的 aurora 主题渲染始终异常（顶部工具栏排版错乱/元素缺失，机制未明），项目不再维护。
+> aurora 全系（主题+配置中心+语言包）2026-09-18 按用户要求恢复；oaf 应用过滤（destan19/OpenAppFilter）同日新增（24.10 上游 v7.x 起只发 apk，工作流自动选择含 ipk 的最新 release）。
 
 **维护类**（3 个）：`clean.yml`（清理旧运行记录）、`clean-release.yml`（清理旧 Release）、`remove.yml`（删除全部 tag）
 
