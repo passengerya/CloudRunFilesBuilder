@@ -28,7 +28,7 @@ jobs:
       - name: Fetch latest release info
         run: |
           curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/destan19/OpenAppFilter/releases?per_page=20 \
-            | jq '[.[] | select(.prerelease==false) | select(any(.assets[]; .name | test("^luci-app-oaf_.*_all\\.ipk$"))) | sort_by(.published_at)] | last' \
+            | jq '[.[] | select(.prerelease==false) | select(any(.assets[]; .name | test("^luci-app-oaf_.*_all\\.ipk$")))] | sort_by(.published_at) | last' \
             > release.json
 
       - name: Parse asset download URLs
