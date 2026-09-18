@@ -1,0 +1,120 @@
+#=================================================
+# https://github.com/wukongdaily/RunFilesBuilder
+# Description: Build RunFiles using GitHub Actions
+# Lisence: MIT
+# Author: wukongdaily
+# Blog: wkdaily.cpolar.cn
+#=================================================
+
+# Aurora 主题配置中心 aurora-config apk 版 (eamonxg/luci-app-aurora-config)
+name: Build 25.12 AuroraConfig
+
+on:
+  schedule:
+    - cron: "30 22 * * *"  # 北京时间早上 6 点 30
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Clone makeself repository
+        run: git clone https://github.com/megastep/makeself.git
+
+      - name: Fetch latest release info
+        run: |
+          curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/eamonxg/luci-app-aurora-config/releases \
+            | jq 'map(select(.prerelease==false)) | sort_by(.published_at) | last' \
+            > release.json
+
+      - name: Parse asset download URLs
+        run: |
+          MAIN_URL=$(jq -r '.assets[] | select(.name | test("^luci-app-aurora-config-.*\\.apk$")) | .browser_download_url' release.json | head -n1)
+          I18N_URL=$(jq -r '.assets[] | select(.name | test("^luci-i18n-aurora-config-zh-cn-.*\\.apk$")) | .browser_download_url' release.json | head -n1)
+          echo "MAIN_URL=$MAIN_URL" >> $GITHUB_ENV
+          echo "I18N_URL=$I18N_URL" >> $GITHUB_ENV
+
+          # 版本号: luci-app-aurora-config-1.2.0-r20260808.apk -> 1.2.0-r20260808
+          VERSION=$(echo "$MAIN_URL" | sed -E 's#.*/luci-app-aurora-config-(.+)\.apk#\1#')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "提取到版本号: $VERSION"
+
+      - name: Download apk files
+        run: |
+          mkdir -p aurora-config
+          wget "$MAIN_URL" -P aurora-config/ 2>/dev/null || echo "⚠️ 无主 apk 资产"
+          wget "$I18N_URL" -P aurora-config/ 2>/dev/null || echo "⚠️ 无 zh-cn i18n 资产"
+          ls -lh aurora-config/
+
+      - name: Create install.sh script
+        run: |
+          cp shell/install25.sh aurora-config/install.sh
+          chmod +x aurora-config/install.sh
+
+      - name: Normalize apk file names (规范为 name-version.apk, imagebuilder 本地索引依赖)
+        run: python3 shell/normalize_apk_names.py
+
+      - name: Move directory to makeself
+        run: mv aurora-config makeself/
+
+      - name: Create self-extracting package
+        run: |
+          cd makeself
+          ./makeself.sh aurora-config/ 25-luci-app-aurora-config-${VERSION}_all.run "by github action" ./install.sh
+
+      - name: Check file sizes
+        run: ls -lh makeself/*.run
+
+      - name: Set tag name
+        id: vars
+        run: |
+          TODAY=$(date -u -d '+8 hour' +'%Y-%m-%d')
+          echo "tag_name=$TODAY" >> $GITHUB_ENV
+
+      - name: Upload run files as release assets
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.tag_name }}
+          name: "Daily Build - ${{ env.tag_name }}"
+          files: makeself/*.run
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+             <p align="left">
+              <img src="https://img.shields.io/github/downloads/passengerya/CloudRunFilesBuilder/${{ env.tag_name }}/total?style=for-the-badge&label=%E4%BB%8A%E6%97%A5%E4%B8%8B%E8%BD%BD%E6%AC%A1%E6%95%B0&labelColor=blue&color=black"/>
+             </p>
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify Sync Store (builder 全部构建完成后即时触发同步)
+        if: success()
+        env:
+          SYNC_DISPATCH_TOKEN: ${{ secrets.SYNC_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$SYNC_DISPATCH_TOKEN" ]; then
+            echo "⏭️ 未配置 SYNC_DISPATCH_TOKEN, 跳过通知(依赖 23:00 UTC 定时同步)"
+            exit 0
+          fi
+          # 领导选举: 等 15s 让同期启动的构建全部入队, 然后由「最新启动且仍在运行/排队」
+          # 的运行发通知——确定性单通知, 不依赖其它构建的完成状态(轮询方式会死锁:
+          # 各运行的等待本身让对方永远看到"运行中")。更晚启动的构建完成后会自行通知。
+          sleep 15
+          my_ts=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/passengerya/CloudRunFilesBuilder/actions/runs?per_page=100" \
+            | jq -r --argjson rid "$GITHUB_RUN_ID" '.workflow_runs[] | select(.id == $rid) | .created_at')
+          newer=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/passengerya/CloudRunFilesBuilder/actions/runs?per_page=100" \
+            | jq --argjson rid "$GITHUB_RUN_ID" --arg ts "$my_ts" \
+            '[.workflow_runs[] | select(.id != $rid and ((.created_at > $ts) or (.created_at == $ts and .id > $rid)) and (.status == "in_progress" or .status == "queued"))] | length')
+          if [ "$newer" != "0" ]; then
+            echo "⏳ 有 $newer 个更晚启动的构建运行中, 由它们完成后通知 Sync Store"
+            exit 0
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: token $SYNC_DISPATCH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/passengerya/AutoBuildTWrt/dispatches" \
+            -d '{"event_type":"builder-done"}')
+          echo "✅ 已通知 Sync Store (HTTP $code)"
