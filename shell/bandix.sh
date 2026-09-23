@@ -1,11 +1,15 @@
 #!/bin/bash
 set -e
 
-# 下载 bandix 各平台 ipk:
-# - bandix 主程序 + luci-app-bandix 来自 dl.openwrt.ai/kiddin9
-# 注意: 不打包 luci-i18n-bandix-zh-cn —— kiddin9 的 luci-app-bandix 已内置
-# zh-cn 语言文件, 再装独立 i18n 包会与 luci-app-bandix 产生文件冲突
-# (opkg check_data_file_clashes), 导致固件构建失败。
+# 下载 bandix 各平台 ipk(全部来自 timsaya 官方 Release, 版本配套):
+# - bandix 主程序:          timsaya/openwrt-bandix 最新 Release(各架构 ipk)
+# - luci-app-bandix:        timsaya/luci-app-bandix 最新 Release(_all ipk)
+# - luci-i18n-bandix-zh-cn: 同 luci-app-bandix Release(_all ipk, Depends: luci-app-bandix)
+#
+# 2026-09-23 变更: 从 kiddin9(dl.openwrt.ai)切换到 timsaya 官方 Release。
+# kiddin9 的 luci-app-bandix 内置 zh-cn lmo, 与独立语言包产生
+# opkg check_data_file_clashes 导致下游固件构建失败, 且版本落后(0.11.1);
+# timsaya 主包不含 lmo、语言包独立发布, 三者配套安装无冲突。
 
 declare -A PLATFORMS=(
   ["x86"]="x86_64"
@@ -13,31 +17,39 @@ declare -A PLATFORMS=(
   ["a53"]="aarch64_cortex-a53"
 )
 
+API_HDR=(-H "Accept: application/vnd.github+json")
+if [ -n "$GITHUB_TOKEN" ]; then
+  API_HDR+=(-H "Authorization: Bearer $GITHUB_TOKEN")
+fi
+
 mkdir -p x86 arm64 a53
+
+BIN_REL=$(curl -s --max-time 60 "${API_HDR[@]}" https://api.github.com/repos/timsaya/openwrt-bandix/releases/latest)
+LUCI_REL=$(curl -s --max-time 60 "${API_HDR[@]}" https://api.github.com/repos/timsaya/luci-app-bandix/releases/latest)
 
 for dir in "${!PLATFORMS[@]}"; do
   arch="${PLATFORMS[$dir]}"
-  BASE_URL="https://dl.openwrt.ai/packages-24.10/${arch}/kiddin9/"
-  echo "[+] 获取 ${dir} (${arch}) 目录列表..."
+  echo "[+] 获取 ${dir} (${arch}) 资产..."
 
-  page=$(curl -sL --max-time 60 "$BASE_URL")
+  BIN_URL=$(echo "$BIN_REL" | jq -r --arg re "^bandix_.*_${arch}\\.ipk$" \
+    '.assets[] | select(.name | test($re)) | .browser_download_url' | head -n1)
+  LUCI_URL=$(echo "$LUCI_REL" | jq -r \
+    '.assets[] | select(.name | test("^luci-app-bandix_.*_all\\.ipk$")) | .browser_download_url' | head -n1)
+  I18N_URL=$(echo "$LUCI_REL" | jq -r \
+    '.assets[] | select(.name | test("^luci-i18n-bandix-zh-cn_.*_all\\.ipk$")) | .browser_download_url' | head -n1)
 
-  # bandix 主程序(排除 luci-app-bandix)
-  BANDIX_IPK=$(echo "$page" | grep -oP 'href="\K[^"]*bandix_[^"]+\.ipk' | grep -v 'luci-app-bandix' | head -n1)
-  # luci 界面
-  LUCI_IPK=$(echo "$page" | grep -oP 'href="\K[^"]*luci-app-bandix_[^"]+\.ipk' | head -n1)
-
-  for ipk in "$BANDIX_IPK" "$LUCI_IPK"; do
-    if [ -n "$ipk" ]; then
-      echo "[+] 下载 $ipk"
-      curl -sL --max-time 300 -o "${dir}/${ipk}" "${BASE_URL}${ipk}"
-    else
-      echo "[!] 未找到 ${arch} 的 bandix ipk"
+  for url in "$BIN_URL" "$LUCI_URL" "$I18N_URL"; do
+    if [ -z "$url" ] || [ "$url" = "null" ]; then
+      echo "[!] 未找到该平台的资产之一, 跳过"
+      continue
     fi
+    fname=$(basename "$url")
+    echo "[+] 下载 $fname"
+    curl -sL --retry 3 --retry-delay 3 --max-time 300 "${API_HDR[@]}" -o "${dir}/${fname}" "$url"
   done
 done
 
-# 提取版本号(取 x86 的 bandix ipk 文件名, 如 bandix_0.11.0-r25_x86_64.ipk -> 0.11.0-r25)
+# 提取版本号(取 x86 的 bandix ipk 文件名, 如 bandix_0.12.10-r1_x86_64.ipk -> 0.12.10-r1)
 BANDIX_FILE=$(ls x86/bandix_*.ipk 2>/dev/null | head -n1)
 if [ -n "$BANDIX_FILE" ]; then
   VERSION=$(basename "$BANDIX_FILE" | sed -n 's/^bandix_\([0-9][^_]*\)_.*\.ipk$/\1/p')

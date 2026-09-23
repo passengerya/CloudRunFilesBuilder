@@ -66,7 +66,7 @@ ImageBuilder 构建时会对本地 `packages/` 目录执行 `apk mkndx`，其索
 | oaf 应用过滤 | `oaf.yml` | destan19/OpenAppFilter |
 | advancedplus 进阶设置 | `advancedplus.yml` | sirpdboy/luci-app-advancedplus |
 | amlogic 晶晨宝盒（仅 ARM64） | `amlogic.yml` | ophub/luci-app-amlogic |
-| bandix 流量监控 | `bandix.yml` | dl.openwrt.ai/kiddin9 + timsaya |
+| bandix 流量监控 | `bandix.yml` | timsaya 官方 Release（openwrt-bandix + luci-app-bandix + zh-cn 语言包） |
 | clashoo | `clashoo.yml` | kenzok8/openwrt-clashoo |
 | dufs 文件服务器 | `dufs.yml` | sigoden/dufs |
 | easytier 组网 | `easytier.yml` | EasyTier/luci-app-easytier |
@@ -113,7 +113,7 @@ ImageBuilder 构建时会对本地 `packages/` 目录执行 `apk mkndx`，其索
 - 产物命名遵守上面的命名规范，**版本号提取要覆盖 `_all.ipk` 后缀**；
 - 25.12 工作流在打包前必须运行 `normalize_apk_names.py` 规范化 apk 文件名（见上文）；
 - 上传 Release 的工作流末尾带「Notify Sync Store」领导选举步骤（模板复制时保留）；
-- 同一 ipk 集的 luci 主包若已内置 i18n（如 bandix），**不要**额外打包独立 luci-i18n 包，否则 opkg 文件冲突导致下游构建失败；
+- 同一 ipk 集的 luci 主包若已内置 i18n（kiddin9 的 luci-app-bandix 曾内置 zh-cn lmo），**不要**额外打包独立 luci-i18n 包，否则 opkg 文件冲突导致下游构建失败——正确做法是切到上游官方发布「主包不含 lmo + 独立语言包」的配套组合（bandix 已于 2026-09-23 切换 timsaya 官方 Release）；
 - 提交到 dev 分支验证后**合并到 daily**（定时构建只读默认分支）。
 
 ## 分支
