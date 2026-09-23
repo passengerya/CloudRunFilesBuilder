@@ -50,6 +50,45 @@ jobs:
           wget "$I18N_URL" -P oaf/ 2>/dev/null || echo "⚠️ 无 zh-cn i18n 资产"
           ls -lh oaf/
 
+      - name: Fix oaf uci-defaults heredoc indentation
+        # 上游 94_feature_3.0 的 heredoc 体用空格缩进, <<-EOF 只剥 tab,
+        # 导致 uci batch 收到带前导空格的命令静默失败 -> /etc/config/appfilter
+        # 首启不生成、oaf 菜单不显示(2026-09-23 下游固件实测)。
+        # 这里把行首空白统一转为 tab(幂等: 上游修复后本步为无害空操作;
+        # 95_time_daily_limit 本就是 tab 缩进, 不受影响)。
+        run: |
+          fix_oaf_ipk() {
+              ipk="$1"
+              tmp=$(mktemp -d)
+              if ! tar -xzf "$ipk" -C "$tmp" 2>/dev/null; then
+                  echo "⚠️ 解包失败, 跳过: $(basename "$ipk")"
+                  rm -rf "$tmp"
+                  return
+              fi
+              if [ ! -f "$tmp/data.tar.gz" ] || [ ! -f "$tmp/control.tar.gz" ]; then
+                  echo "⚠️ ipk 布局不兼容, 跳过: $(basename "$ipk")"
+                  rm -rf "$tmp"
+                  return
+              fi
+              mkdir -p "$tmp/data"
+              tar -xzf "$tmp/data.tar.gz" -C "$tmp/data"
+              sed -i 's/^[[:space:]]\+\(set \|commit \)/\t\1/' \
+                  "$tmp/data/etc/uci-defaults/94_feature_3.0" 2>/dev/null || true
+              tar -czf "$tmp/data.tar.gz" -C "$tmp/data" .
+              tar -czf "$ipk.new" -C "$tmp" debian-binary data.tar.gz control.tar.gz
+              mv "$ipk.new" "$ipk"
+              rm -rf "$tmp"
+              echo "✅ 已修复 heredoc 缩进: $(basename "$ipk")"
+          }
+          for ipk in oaf/luci-app-oaf_*.ipk; do
+              if [ -f "$ipk" ]; then
+                  fix_oaf_ipk "$ipk"
+              fi
+          done
+          echo "--- 修复后 94_feature_3.0 前 4 行(应显示 \\t 即 tab) ---"
+          tar -xzOf oaf/luci-app-oaf_*.ipk data.tar.gz 2>/dev/null \
+            | tar -xzO ./etc/uci-defaults/94_feature_3.0 2>/dev/null | sed -n '2,5l' || true
+
       - name: Create install.sh script
         run: |
           cat <<EOF > oaf/install.sh
