@@ -49,9 +49,10 @@ for dir in "${!PLATFORMS[@]}"; do
 done
 
 # 提取版本号(取 x86 的 bandix apk 文件名, 如 bandix-0.12.10-r1_x86_64.apk -> 0.12.10-r1)
+# 注意: 版本段含连字符(-r1), 排除字符必须是下划线而非连字符
 BANDIX_FILE=$(ls x86/bandix-*.apk 2>/dev/null | head -n1)
 if [ -n "$BANDIX_FILE" ]; then
-  VERSION=$(basename "$BANDIX_FILE" | sed -n 's/^bandix-\([0-9][^-]*\)_.*\.apk$/\1/p')
+  VERSION=$(basename "$BANDIX_FILE" | sed -n 's/^bandix-\([0-9][^_]*\)_.*\.apk$/\1/p')
   echo "VERSION=$VERSION" >> $GITHUB_ENV
   echo "✅ 提取到版本号: $VERSION"
 else
