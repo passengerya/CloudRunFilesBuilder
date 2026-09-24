@@ -74,8 +74,12 @@ jobs:
               tar -xzf "$tmp/data.tar.gz" -C "$tmp/data"
               sed -i 's/^[[:space:]]\+\(set \|commit \)/\t\1/' \
                   "$tmp/data/etc/uci-defaults/94_feature_3.0" 2>/dev/null || true
-              tar -czf "$tmp/data.tar.gz" -C "$tmp/data" .
-              tar -czf "$ipk.new" -C "$tmp" debian-binary data.tar.gz control.tar.gz
+              # 重打包必须与原版格式完全对齐: 成员名带 ./ 前缀(ImageBuilder 索引生成器
+              # 按 ./control.tar.gz 提取, 丢了前缀就读不到 control -> 索引条目元数据损坏,
+              # 2026-09-24 下游构建 #43 因此失败)且属主归 0(root)。
+              tar -czf "$tmp/data.tar.gz" -C "$tmp/data" --owner=0 --group=0 .
+              tar -czf "$ipk.new" -C "$tmp" --owner=0 --group=0 \
+                  ./debian-binary ./data.tar.gz ./control.tar.gz
               mv "$ipk.new" "$ipk"
               rm -rf "$tmp"
               echo "✅ 已修复 heredoc 缩进: $(basename "$ipk")"
