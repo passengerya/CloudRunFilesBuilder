@@ -52,7 +52,7 @@ ImageBuilder 构建时会对本地 `packages/` 目录执行 `apk mkndx`，其索
 
 示例：`mosdns_v5.3.4-r14_x86_64.run`、`24_quickfile_1.0.16_aarch64_generic.run`、`25-argon-2.4.7_aarch64_generic.run`、`luci-app-store-0.2.1-r1_all.run`。
 
-## 应用清单（53 个工作流）
+## 应用清单（54 个工作流）
 
 **24.10 ipk 通道**（30 个）：
 
@@ -89,9 +89,9 @@ ImageBuilder 构建时会对本地 `packages/` 目录执行 `apk mkndx`，其索
 | iStore 商店 | `store.yml` | linkease/istore |
 | 高级卸载 | `advance_uninstall.yml` | 上游 run 直采 |
 
-**25.12 apk 通道**（20 个）：`argon25.yml`、`build-pw.yml`（PassWall）、`mosdns25.yml`、`oc25.yml`（OpenClash）、`pw2-25.yml`（Passwall2）、`ssrp25.yml`、`store25.yml`（iStore）、`25-quickfile.yml`、`25-singbox.yml`、`25-openwrt-daede.yml`、`25-clashoo.yml`、`25-rtp2httpd.yml`、`25-advancedplus.yml`、`25-aurora-theme.yml`、`25-aurora-config.yml`、`25-oaf.yml`、`25-amlogic.yml`、`25-tailscale-community.yml`、`25-easytier.yml`、`25-shadcn.yml`
+**25.12 apk 通道**（21 个）：`argon25.yml`、`build-pw.yml`（PassWall）、`mosdns25.yml`、`oc25.yml`（OpenClash）、`pw2-25.yml`（Passwall2）、`ssrp25.yml`、`store25.yml`（iStore）、`25-quickfile.yml`、`25-singbox.yml`、`25-openwrt-daede.yml`、`25-clashoo.yml`、`25-rtp2httpd.yml`、`25-advancedplus.yml`、`25-aurora-theme.yml`、`25-aurora-config.yml`、`25-oaf.yml`、`25-amlogic.yml`、`25-tailscale-community.yml`、`25-easytier.yml`、`25-shadcn.yml`、`25-bandix.yml`（bandix 流量监控）
 
-> aurora 全系（主题+配置中心+语言包）2026-09-18 按用户要求恢复；oaf 应用过滤（destan19/OpenAppFilter）同日新增（24.10 上游 v7.x 起只发 apk，工作流自动选择含 ipk 的最新 release）。
+> aurora 全系（主题+配置中心+语言包）2026-09-18 按用户要求恢复；oaf 应用过滤（destan19/OpenAppFilter）同日新增（24.10 上游 v7.x 起只发 apk，工作流自动选择含 ipk 的最新 release）。**2026-09-24 补齐 25.12 通道**：bandix 新增 `25-bandix.yml`（timsaya 官方 Release apk）；adguardhome/dufs/homeproxy 已确认在 ImmortalWrt 25.12.1 官方源，由 TWrt 侧 imm 固定段提供（无需 builder 工作流）；lucky/momo/nikki/nekobox/openlist2/高级卸载上游仍无 25.12 apk 资产，继续缺席。
 
 **维护类**（3 个）：`clean.yml`（清理旧运行记录）、`clean-release.yml`（清理旧 Release）、`remove.yml`（删除全部 tag）
 
