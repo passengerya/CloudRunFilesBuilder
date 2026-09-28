@@ -6,13 +6,24 @@
 # Blog: wkdaily.cpolar.cn
 #=================================================
 
-# 应用过滤 OpenAppFilter apk 版 (destan19)
+# 应用过滤 OpenAppFilter apk 版 (destan19) —— 三件套打包
+# destan19 安装指南要求 kmod-oaf + appfilter(引擎) + luci-app-oaf(UI) 三件套齐全才能工作;
+# 历史版本只打包了 luci 两个 apk → 固件里引擎缺失, 用户列表无法收集(防错 #45)。
+# 本工作流额外下载每目标内核 tarball, 取出引擎与内核模块, 并把 kmod-oaf 的
+# kernel 钉扎依赖改写为 fuzzy 前缀匹配(见 shell/patch_apk3.py):
+#   kernel=6.12.94~<OpenWrt配置哈希>-r1  →  kernel~6.12.94
+# 使 kmod 在任何 imm 同内核版本的目标上可安装(imm 的 kernel 版本哈希按目标不同)。
 name: Build 25.12 OpenAppFilter
 
 on:
   schedule:
     - cron: "11 22 * * *"  # 北京时间早上 6 点 11
   workflow_dispatch:
+    inputs:
+      kernel_version:
+        description: '匹配的内核版本(imm 25.12.1 = 6.12.94; 上游按 openwrt 25.12.x 发布不同内核 tarball)'
+        required: false
+        default: '6.12.94'
 
 jobs:
   build:
@@ -32,39 +43,75 @@ jobs:
             > release.json
 
       - name: Parse asset download URLs
+        env:
+          KVER: ${{ inputs.kernel_version || '6.12.94' }}
         run: |
           MAIN_URL=$(jq -r '.assets[] | select(.name | test("^luci-app-oaf-.*\\.apk$")) | .browser_download_url' release.json | head -n1)
           I18N_URL=$(jq -r '.assets[] | select(.name | test("^luci-i18n-oaf-zh-cn.*\\.apk$")) | .browser_download_url' release.json | head -n1)
+          # 每目标内核 tarball: 仅取与内核版本匹配的(定时触发时 inputs 为空, 用默认 6.12.94)
+          X86_TARBALL=$(jq -r --arg kv "$KVER" \
+            '.assets[] | select(.name | test("^openwrt[0-9.]+-oaf_.*-x86_64-kernel_" + $kv + "\\.tar\\.gz$")) | .browser_download_url' release.json | head -n1)
+          ARM_TARBALL=$(jq -r --arg kv "$KVER" \
+            '.assets[] | select(.name | test("^openwrt[0-9.]+-oaf_.*-rockchip_armv8-kernel_" + $kv + "\\.tar\\.gz$")) | .browser_download_url' release.json | head -n1)
           echo "MAIN_URL=$MAIN_URL" >> $GITHUB_ENV
           echo "I18N_URL=$I18N_URL" >> $GITHUB_ENV
+          echo "X86_TARBALL=$X86_TARBALL" >> $GITHUB_ENV
+          echo "ARM_TARBALL=$ARM_TARBALL" >> $GITHUB_ENV
+          [ -n "$MAIN_URL" ] && [ "$MAIN_URL" != "null" ] || { echo "❌ 未找到 luci-app-oaf apk 资产"; exit 1; }
+          [ -n "$X86_TARBALL" ] && [ "$X86_TARBALL" != "null" ] || { echo "❌ 未找到 x86_64 内核 $KVER tarball(上游内核版本已变更? 检查 release 资产与 imm 默认 imagebuilder 内核)"; exit 1; }
+          [ -n "$ARM_TARBALL" ] && [ "$ARM_TARBALL" != "null" ] || { echo "❌ 未找到 rockchip_armv8 内核 $KVER tarball"; exit 1; }
+          echo "✅ 三件套资产解析完成"
 
-          # 版本号: luci-app-oaf-1.2.0-r20260808.apk -> 1.2.0-r20260808
-          VERSION=$(echo "$MAIN_URL" | sed -E 's#.*/luci-app-oaf-(.+)\.apk#\1#')
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "提取到版本号: $VERSION"
+          # 引擎版本: 取自 tarball 名 openwrt25.12.5-oaf_v7.0.1-x86_64-... -> 7.0.1
+          ENGINE_VER=$(basename "$X86_TARBALL" | sed -E 's/^openwrt[0-9.]+-oaf_v([0-9.]+)-.*/\1/')
+          echo "ENGINE_VER=$ENGINE_VER" >> $GITHUB_ENV
+          echo "引擎版本: $ENGINE_VER"
 
-      - name: Download apk files
+      - name: Download apk files and kernel tarballs
         run: |
-          mkdir -p oaf
-          wget "$MAIN_URL" -P oaf/ 2>/dev/null || echo "⚠️ 无主 apk 资产"
-          wget "$I18N_URL" -P oaf/ 2>/dev/null || echo "⚠️ 无 zh-cn i18n 资产"
-          ls -lh oaf/
+          mkdir -p oaf-x86 oaf-arm64 kmods-x86 kmods-arm64
+          wget "$MAIN_URL" -P oaf-x86/ 2>/dev/null || echo "⚠️ 无主 apk 资产"
+          wget "$I18N_URL" -P oaf-x86/ 2>/dev/null || echo "⚠️ 无 zh-cn i18n 资产"
+          cp oaf-x86/*.apk oaf-arm64/ 2>/dev/null || true
+          wget "$X86_TARBALL" -P kmods-x86/ 2>/dev/null
+          wget "$ARM_TARBALL" -P kmods-arm64/ 2>/dev/null
+          tar -xzf kmods-x86/*.tar.gz -C kmods-x86/
+          tar -xzf kmods-arm64/*.tar.gz -C kmods-arm64/
+          # 引擎 + 内核模块分别并入对应架构的 .run 目录
+          cp kmods-x86/*/appfilter-*.apk kmods-x86/*/kmod-oaf-*.apk oaf-x86/
+          cp kmods-arm64/*/appfilter-*.apk kmods-arm64/*/kmod-oaf-*.apk oaf-arm64/
+          ls -lh oaf-x86/ oaf-arm64/
+
+      - name: Patch kmod-oaf kernel dependency (fuzzy prefix match)
+        run: |
+          # kmod-oaf 的 depends 以 OpenWrt 内核配置哈希钉扎, 与 imm 不匹配;
+          # 改写为 kernel~<ver>(fuzzy 前缀)使任意 imm 同内核目标可安装(见 shell/patch_apk3.py)
+          for f in oaf-x86/kmod-oaf-*.apk oaf-arm64/kmod-oaf-*.apk; do
+            python3 shell/patch_apk3.py --kernel-fuzzy "$f" "$f.tmp" --dump || exit 1
+            mv "$f.tmp" "$f"
+          done
+          # 自检: 重新解析补丁后的 apk 并跑单元测试(真实夹具)
+          python3 shell/test_patch_apk3.py oaf-x86/kmod-oaf-*.apk oaf-arm64/kmod-oaf-*.apk
 
       - name: Create install.sh script
         run: |
-          cp shell/install25.sh oaf/install.sh
-          chmod +x oaf/install.sh
+          for d in oaf-x86 oaf-arm64; do
+            cp shell/install25.sh "$d/install.sh"
+            chmod +x "$d/install.sh"
+          done
 
       - name: Normalize apk file names (规范为 name-version.apk, imagebuilder 本地索引依赖)
         run: python3 shell/normalize_apk_names.py
 
-      - name: Move directory to makeself
-        run: mv oaf makeself/
+      - name: Move directories to makeself
+        run: mv oaf-x86 oaf-arm64 makeself/
 
-      - name: Create self-extracting package
+      - name: Create self-extracting packages
         run: |
           cd makeself
-          ./makeself.sh oaf/ 25-luci-app-oaf-${VERSION}_all.run "by github action" ./install.sh
+          # 引擎版本号标识 .run; 架构后缀决定同步分类: x86_64 -> run/x86, aarch64_generic -> run/arm64
+          ./makeself.sh oaf-x86/ 25-luci-app-oaf-${ENGINE_VER}_x86_64.run "by github action" ./install.sh
+          ./makeself.sh oaf-arm64/ 25-luci-app-oaf-${ENGINE_VER}_aarch64_generic.run "by github action" ./install.sh
 
       - name: Check file sizes
         run: ls -lh makeself/*.run
