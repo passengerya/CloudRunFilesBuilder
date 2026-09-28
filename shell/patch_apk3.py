@@ -85,23 +85,44 @@ def decompress_package(data):
 
 
 def split_blocks(stream):
-    """把解压流按块头切分为 [(type, payload)]; type=None 表示 0 结尾块。"""
+    """把解压流按块头切分为 [(type, payload)]; type=None 表示 0 结尾块。
+
+    块头 = u32 type_size: type=高2位(0=ADB元数据, 1=SIG签名, 2=DATA文件, 3=EXT扩展),
+    size=低30位(含头4B); type=3 时随后还有 u32 reserved + u64 x_size(总块长),
+    真实类型 = size 低30位。
+    注意: apk 的块遍历按 ROUND_UP(rawsize, 8) 前进(ADB_BLOCK_ALIGNMENT=8),
+    块间可能夹 0~7 字节零填充, 必须按对齐步进, 否则后续块头全部错位。
+    """
     if stream[:8] != b"ADB.pckg":
         raise AdbParseError("流首不是 ADB.pckg")
     blocks = []
     pos = 8
     n = len(stream)
-    while pos + 4 <= n:
+    while pos < n:
         ts = int.from_bytes(stream[pos:pos + 4], "little")
+        if ts == 0 and pos == n - 4:
+            # 4 字节零 = 末尾块的对齐填充(非真实块)
+            break
         if ts == 0:
-            blocks.append((None, b""))
             break
         typ = ts >> 30
         size = ts & V_MASK
-        if size < 4 or pos + size > n:
-            raise AdbParseError("块头越界 @%d type=%d size=%d" % (pos, typ, size))
-        blocks.append((typ, stream[pos + 4:pos + size]))
-        pos += size
+        if typ == 3:  # EXT 块: [u32 type_size][u32 reserved][u64 x_size][payload]
+            if pos + 16 > n:
+                raise AdbParseError("EXT 块头越界 @%d" % pos)
+            real_type = size & V_MASK
+            x_size = int.from_bytes(stream[pos + 8:pos + 16], "little")
+            if x_size < 16 or pos + x_size > n:
+                raise AdbParseError("EXT 块越界 @%d x_size=%d" % (pos, x_size))
+            blocks.append((real_type, stream[pos + 16:pos + x_size]))
+            pos += x_size
+        else:
+            if size < 4 or pos + size > n:
+                raise AdbParseError("块头越界 @%d type=%d size=%d" % (pos, typ, size))
+            blocks.append((typ, stream[pos + 4:pos + size]))
+            pos += size
+        # 对齐步进(块间零填充)
+        pos = (pos + 7) & ~7
     return blocks
 
 
@@ -295,14 +316,22 @@ def process(data, dump=False):
         return data
     new_adb = reencode(root)
 
+    # 块对齐: apk 的块遍历按 ROUND_UP(rawsize, 8) 前进(adb.h ADB_BLOCK_ALIGNMENT=8),
+    # rawsize = 4 + payload 长度必须是 8 的倍数, 否则下一个块头落在填充区 → "ADB block error"
+    pad = (-(4 + len(new_adb))) % 8
+    if pad:
+        new_adb += b"\x00" * pad
+
     parts = [b"ADB.pckg"]
     for i, (t, payload) in enumerate(blocks):
-        if t is None:
-            parts.append((0).to_bytes(4, "little"))
-        elif i == adb_idx:
+        if i == adb_idx:
+            # new_adb 已在载荷内补齐到 8 对齐(rawsize = 4 + len 为 8 的倍数)
             parts.append((len(new_adb) + 4).to_bytes(4, "little") + new_adb)
         else:
-            parts.append(((t << 30) | (len(payload) + 4)).to_bytes(4, "little") + payload)
+            # 保留块原样输出, 块间补齐 8 对齐的零填充(与 apk 遍历器步进一致)
+            rawsize = len(payload) + 4
+            pad = (-rawsize) % 8
+            parts.append(((t << 30) | rawsize).to_bytes(4, "little") + payload + b"\x00" * pad)
     new_stream = b"".join(parts)
 
     co = zlib.compressobj(9, zlib.DEFLATED, -15)
