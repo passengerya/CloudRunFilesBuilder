@@ -58,9 +58,10 @@ jobs:
           ./scripts/feeds install -p cwluci luci-app-turboacc
           # 上游 Makefile 未定义 PKG_VERSION, 会落为 git-xxx 版本号导致下游包名解析
           # 出错(apk_package_name 会截出 luci-app-turboacc-git); 注入日期版本
-          sed -i 's/^include \$(TOPDIR)\/rules.mk/PKG_VERSION:=$(shell date +%Y.%m.%d)\n\ninclude \$(TOPDIR)\/rules.mk/' \
-            package/feeds/cwluci/applications/luci-app-turboacc/Makefile
-          grep -n "PKG_VERSION" package/feeds/cwluci/applications/luci-app-turboacc/Makefile
+          # (feeds install 后包位于 package/feeds/cwluci/<包名>, 是符号链接, sed 需 --follow-symlinks)
+          sed -i --follow-symlinks 's/^include \$(TOPDIR)\/rules.mk/PKG_VERSION:=$(shell date +%Y.%m.%d)\n\ninclude \$(TOPDIR)\/rules.mk/' \
+            package/feeds/cwluci/luci-app-turboacc/Makefile
+          grep -n "PKG_VERSION" package/feeds/cwluci/luci-app-turboacc/Makefile
 
       - name: Compile luci-app-turboacc
         working-directory: ${{ env.SDK_DIR }}
