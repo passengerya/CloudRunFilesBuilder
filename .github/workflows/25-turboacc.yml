@@ -67,6 +67,9 @@ jobs:
         working-directory: ${{ env.SDK_DIR }}
         run: |
           set -e
+          # 先非交互刷新 .config(新 feed 的包配置需要进 .config, 否则 make 会尝试
+          # menuconfig 而无终端报 "Error opening terminal")
+          make defconfig
           make package/feeds/cwluci/luci-app-turboacc/compile V=s
           echo "✅ 编译完成"
           ls -lh bin/packages/x86_64/cwluci/ | grep -i turboacc || { echo "❌ 未找到 turboacc 编译产物"; exit 1; }
