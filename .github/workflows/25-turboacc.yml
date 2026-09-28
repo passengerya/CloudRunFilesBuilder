@@ -67,7 +67,10 @@ jobs:
         working-directory: ${{ env.SDK_DIR }}
         run: |
           set -e
-          # 先非交互刷新 .config(新 feed 的包配置需要进 .config, 否则 make 会尝试
+          # SDK .config 自带 CONFIG_LUCI_CSSTIDY=y → 会拉 csstidy 源码(镜像 404 无回退);
+          # luci.mk 中它是条件依赖, 关闭后 CSS 不做压缩(功能不受影响)
+          echo "# CONFIG_LUCI_CSSTIDY is not set" >> .config
+          # 非交互刷新 .config(新 feed 的包配置需要进 .config, 否则 make 会尝试
           # menuconfig 而无终端报 "Error opening terminal")
           make defconfig
           make package/feeds/cwluci/luci-app-turboacc/compile V=s
