@@ -62,6 +62,12 @@ jobs:
           sed -i --follow-symlinks 's/^include \$(TOPDIR)\/rules.mk/PKG_VERSION:=$(shell date +%Y.%m.%d)\n\ninclude \$(TOPDIR)\/rules.mk/' \
             package/feeds/cwluci/luci-app-turboacc/Makefile
           grep -n "PKG_VERSION" package/feeds/cwluci/luci-app-turboacc/Makefile
+          # turboacc 的 rpcd 是 lua 写的, 依赖 luci-lib-jsonc/luci-lib-nixio;
+          # imm 25.12 固件默认无 lua 及这两个库, 缺依赖时页面 JS 抛 TypeError 整个
+          # TurboACC 页面渲染失败(防错 #49)。依赖写进 apk, 固件构建时 apk 自动解析。
+          sed -i --follow-symlinks '/^LUCI_PKGARCH:=all/i LUCI_DEPENDS+=+luci-lib-jsonc +luci-lib-nixio' \
+            package/feeds/cwluci/luci-app-turboacc/Makefile
+          grep -n "LUCI_DEPENDS" package/feeds/cwluci/luci-app-turboacc/Makefile
 
       - name: Compile luci-app-turboacc
         working-directory: ${{ env.SDK_DIR }}
@@ -86,12 +92,39 @@ jobs:
           ls -lh turboacc/
           [ -n "$(ls turboacc/luci-app-turboacc*.apk 2>/dev/null)" ] || { echo "❌ 主 apk 缺失"; exit 1; }
           cp shell/install25.sh turboacc/install.sh
+          # 防 CRLF: 仓库文件可能带 \r(Windows autocrlf), 残留 CR 会让 .run 的
+          # install.sh 报 bad interpreter(防错 #18 精神)
+          sed -i 's/\r$//' turboacc/install.sh
           chmod +x turboacc/install.sh
 
           # 版本号: luci-app-turboacc-<VER>.apk -> <VER>
           VERSION=$(ls turboacc/luci-app-turboacc-*.apk | head -n1 | xargs -n1 basename | sed -E 's/^luci-app-turboacc-(.+)\.apk$/\1/')
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "提取到版本号: $VERSION"
+
+      - name: Verify apk Depends (防错 #49: 缺 kmod/lua 库依赖时页面或加速功能会坏)
+        run: |
+          set -e
+          python3 - <<'EOF'
+          import glob, sys
+          sys.path.insert(0, 'shell')
+          import patch_apk3
+          apks = [f for f in glob.glob('turboacc/*.apk') if 'i18n' not in f]
+          if not apks:
+              print('❌ 未找到 turboacc 主 apk')
+              sys.exit(1)
+          data = open(apks[0], 'rb').read()
+          blocks = patch_apk3.split_blocks(patch_apk3.decompress_package(data))
+          adb_idx = next(i for i, (t, _) in enumerate(blocks) if t == 0)
+          deps = [d[0] for d in patch_apk3.read_depends(patch_apk3.decode_adb(blocks[adb_idx][1]))]
+          print('Depends:', deps)
+          need = ['kmod-ipt-offload', 'kmod-tcp-bbr', 'luci-lib-jsonc', 'luci-lib-nixio']
+          missing = [d for d in need if d not in deps]
+          if missing:
+              print('❌ Depends 缺少:', missing)
+              sys.exit(1)
+          print('✅ Depends 校验通过')
+          EOF
 
       - name: Normalize apk file names (规范为 name-version.apk, imagebuilder 本地索引依赖)
         run: python3 shell/normalize_apk_names.py turboacc/

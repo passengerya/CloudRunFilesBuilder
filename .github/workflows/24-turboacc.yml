@@ -1,0 +1,175 @@
+#=================================================
+# https://github.com/wukongdaily/RunFilesBuilder
+# Description: Build RunFiles using GitHub Actions
+# Lisence: MIT
+# Author: wukongdaily
+# Blog: wkdaily.cpolar.cn
+#=================================================
+
+# TurboACC 网络加速 24.10 通道 (coolsnowwolf/luci openwrt-24.10) —— imm SDK 源编译 ipk
+# 24.10 通道首个 SDK 编译工作流: 上游 coolsnowwolf/luci 只发源码无现成 ipk,
+# imm 官方 24.10 luci 源也没有 turboacc, 故用 imm 24.10.6 SDK 源编译(纯 Lua/JS noarch, 秒级)。
+# 依赖面(Kconfig 默认, x86): FLOW_OFFLOADING → kmod-ipt-offload + BBR_CCA → kmod-tcp-bbr,
+# 由路由器 opkg 按自身内核 hash 从官方源解析(构建默认版本 24.10.6 = k6.6.133; 更旧
+# 24.10.x 路由器的官方源指向各自 kmods 目录, 一般同样可装)。
+# 与 oaf 应用过滤互斥(同时启用时 sync 生成 ⚠️ 冲突警告, 见 AutoBuildTWrt 防错 #46)。
+# 防错 #49: LUCI_DEPENDS 补 luci-lib-jsonc/luci-lib-nixio(turboacc rpcd 是 lua 写的,
+# 缺库时 TurboACC 页面 JS 抛 TypeError 整体渲染失败)。
+name: Build 24.10 TurboACC
+
+on:
+  schedule:
+    - cron: "23 22 * * *"  # 北京时间早上 6 点 23(与 25.12 的 6:17 错峰)
+  workflow_dispatch:
+    inputs:
+      imm_version:
+        description: 'imm 版本(SDK 源)'
+        required: false
+        default: '24.10.6'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Clone makeself repository
+        run: git clone https://github.com/megastep/makeself.git
+
+      - name: Download and extract imm SDK
+        run: |
+          set -e
+          # 24.10 的 SDK 用 gcc-13.3.0(25.12 是 gcc-14.3.0), 文件名不可照搬
+          SDK_FILE="immortalwrt-sdk-${{ inputs.imm_version }}-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
+          wget -q "https://downloads.immortalwrt.org/releases/${{ inputs.imm_version }}/targets/x86/64/$SDK_FILE" \
+            || { echo "❌ SDK 下载失败: $SDK_FILE"; exit 1; }
+          tar --zstd -xf "$SDK_FILE"
+          rm "$SDK_FILE"
+          SDK_DIR=$(ls -d immortalwrt-sdk-*/ | head -n1)
+          echo "SDK_DIR=$SDK_DIR" >> $GITHUB_ENV
+          echo "✅ SDK: $SDK_DIR"
+
+      - name: Add coolsnowwolf luci feed and install turboacc
+        working-directory: ${{ env.SDK_DIR }}
+        run: |
+          set -e
+          # 用独立 feed 名避免与 SDK 自带的 imm luci feed 冲突
+          echo "src-git cwluci https://github.com/coolsnowwolf/luci.git;openwrt-24.10" >> feeds.conf
+          ./scripts/feeds update cwluci
+          ./scripts/feeds install -p cwluci luci-app-turboacc
+          # 上游 Makefile 未定义 PKG_VERSION, 会落为 git-xxx 版本号导致下游包名解析
+          # 出错; 注入日期版本(feeds install 后包是符号链接, sed 需 --follow-symlinks)
+          sed -i --follow-symlinks 's/^include \$(TOPDIR)\/rules.mk/PKG_VERSION:=$(shell date +%Y.%m.%d)\n\ninclude \$(TOPDIR)\/rules.mk/' \
+            package/feeds/cwluci/luci-app-turboacc/Makefile
+          grep -n "PKG_VERSION" package/feeds/cwluci/luci-app-turboacc/Makefile
+          # turboacc 的 rpcd 是 lua 写的, 依赖 luci-lib-jsonc/luci-lib-nixio;
+          # 精简固件缺这两个库时页面 JS 抛 TypeError 整体渲染失败(防错 #49)。
+          # 依赖写进 ipk, 安装时 opkg 自动解析。
+          sed -i --follow-symlinks '/^LUCI_PKGARCH:=all/i LUCI_DEPENDS+=+luci-lib-jsonc +luci-lib-nixio' \
+            package/feeds/cwluci/luci-app-turboacc/Makefile
+          grep -n "LUCI_DEPENDS" package/feeds/cwluci/luci-app-turboacc/Makefile
+
+      - name: Compile luci-app-turboacc
+        working-directory: ${{ env.SDK_DIR }}
+        run: |
+          set -e
+          # SDK .config 自带 CONFIG_LUCI_CSSTIDY=y → 会拉 csstidy 源码(镜像 404 无回退);
+          # luci.mk 中它是条件依赖, 关闭后 CSS 不做压缩(功能不受影响)
+          echo "# CONFIG_LUCI_CSSTIDY is not set" >> .config
+          # 非交互刷新 .config(新 feed 的包配置需要进 .config, 否则 make 会尝试
+          # menuconfig 而无终端报 "Error opening terminal")
+          make defconfig
+          make package/feeds/cwluci/luci-app-turboacc/compile V=s
+          echo "✅ 编译完成"
+          ls -lh bin/packages/x86_64/cwluci/ | grep -i turboacc || { echo "❌ 未找到 turboacc 编译产物"; exit 1; }
+
+      - name: Collect ipks and create install.sh
+        run: |
+          set -e
+          mkdir -p turboacc
+          cp ${{ env.SDK_DIR }}/bin/packages/x86_64/cwluci/luci-app-turboacc*.ipk turboacc/ 2>/dev/null || true
+          cp ${{ env.SDK_DIR }}/bin/packages/x86_64/cwluci/luci-i18n-turboacc-zh-cn*.ipk turboacc/ 2>/dev/null || echo "⚠️ 无 zh-cn i18n 产物"
+          ls -lh turboacc/
+          [ -n "$(ls turboacc/luci-app-turboacc*.ipk 2>/dev/null)" ] || { echo "❌ 主 ipk 缺失"; exit 1; }
+          # 24.10 是 opkg 通道, install.sh 用 opkg(apk 的 --allow-untrusted 不适用)
+          cp shell/install.sh turboacc/install.sh
+          # 防 CRLF: 仓库文件可能带 \r(Windows autocrlf), 残留 CR 会让 .run 的
+          # install.sh 报 bad interpreter(防错 #18 精神)
+          sed -i 's/\r$//' turboacc/install.sh
+          chmod +x turboacc/install.sh
+
+          # 版本号: luci-app-turboacc_<VER>_all.ipk -> <VER>
+          VERSION=$(ls turboacc/luci-app-turboacc_*.ipk | head -n1 | xargs -n1 basename | sed -E 's/^luci-app-turboacc_(.*)_all\.ipk$/\1/')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "提取到版本号: $VERSION"
+
+      - name: Verify ipk Depends (防错 #49: 缺 kmod/lua 库依赖时页面或加速功能会坏)
+        run: |
+          set -e
+          ipk=$(ls turboacc/luci-app-turboacc_*.ipk | head -n1)
+          depends=$(tar -xOf "$ipk" ./control.tar.gz | tar -xzO ./control | grep '^Depends:' || echo "MISSING")
+          echo "$depends"
+          for dep in kmod-ipt-offload kmod-tcp-bbr luci-lib-jsonc luci-lib-nixio; do
+            echo "$depends" | grep -q "$dep" || { echo "❌ Depends 缺少 $dep"; exit 1; }
+          done
+          echo "✅ Depends 校验通过"
+
+      - name: Move directory to makeself
+        run: mv turboacc makeself/
+
+      - name: Create self-extracting package
+        run: |
+          cd makeself
+          ./makeself.sh turboacc/ 24_luci-app-turboacc-${VERSION}_all.run "by github action" ./install.sh
+
+      - name: Check file sizes
+        run: ls -lh makeself/*.run
+
+      - name: Set tag name
+        id: vars
+        run: |
+          TODAY=$(date -u -d '+8 hour' +'%Y-%m-%d')
+          echo "tag_name=$TODAY" >> $GITHUB_ENV
+
+      - name: Upload run files as release assets
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.tag_name }}
+          name: "Daily Build - ${{ env.tag_name }}"
+          files: makeself/*.run
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+             <p align="left">
+              <img src="https://img.shields.io/github/downloads/passengerya/CloudRunFilesBuilder/${{ env.tag_name }}/total?style=for-the-badge&label=%E4%BB%8A%E6%97%A5%E4%B8%8B%E8%BD%BD%E6%AC%A1%E6%95%B0&labelColor=blue&color=black"/>
+             </p>
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify Sync Store (builder 全部构建完成后即时触发同步)
+        if: success()
+        env:
+          SYNC_DISPATCH_TOKEN: ${{ secrets.SYNC_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$SYNC_DISPATCH_TOKEN" ]; then
+            echo "⏭️ 未配置 SYNC_DISPATCH_TOKEN, 跳过通知(依赖 23:00 UTC 定时同步)"
+            exit 0
+          fi
+          sleep 15
+          my_ts=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/passengerya/CloudRunFilesBuilder/actions/runs?per_page=100" \
+            | jq -r --argjson rid "$GITHUB_RUN_ID" '.workflow_runs[] | select(.id == $rid) | .created_at')
+          newer=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/passengerya/CloudRunFilesBuilder/actions/runs?per_page=100" \
+            | jq --argjson rid "$GITHUB_RUN_ID" --arg ts "$my_ts" \
+            '[.workflow_runs[] | select(.id != $rid and ((.created_at > $ts) or (.created_at == $ts and .id > $rid)) and (.status == "in_progress" or .status == "queued"))] | length')
+          if [ "$newer" != "0" ]; then
+            echo "⏳ 有 $newer 个更晚启动的构建运行中, 由它们完成后通知 Sync Store"
+            exit 0
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: token $SYNC_DISPATCH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/passengerya/AutoBuildTWrt/dispatches" \
+            -d '{"event_type":"builder-done"}')
+          echo "✅ 已通知 Sync Store (HTTP $code)"
